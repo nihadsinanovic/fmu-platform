@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY . .
-RUN pip install --no-cache-dir -e ".[dev]"
+RUN pip install --no-cache-dir "."
 
 # Create storage directories
 RUN mkdir -p /opt/fmu-platform/fmu-library \
