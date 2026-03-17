@@ -9,10 +9,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY pyproject.toml .
-RUN pip install --no-cache-dir -e ".[dev]"
-
 COPY . .
+RUN pip install --no-cache-dir -e ".[dev]"
 
 # Create storage directories
 RUN mkdir -p /opt/fmu-platform/fmu-library \
