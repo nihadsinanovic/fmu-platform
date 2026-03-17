@@ -33,3 +33,11 @@ temp/
 # OS
 .DS_Store
 Thumbs.db
+
+# SSL certs (managed by certbot)
+nginx/ssl/*
+!nginx/ssl/.gitkeep
+
+# Test/cache
+.pytest_cache/
+.ruff_cache/
