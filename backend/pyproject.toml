@@ -34,6 +34,9 @@ dev = [
     "httpx>=0.27.0",
 ]
 
+[tool.setuptools.packages.find]
+include = ["app*", "engine*", "workers*", "simulation*"]
+
 [build-system]
 requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
