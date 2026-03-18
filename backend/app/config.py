@@ -1,8 +1,23 @@
 import json
 from pathlib import Path
+from typing import Annotated
 
-from pydantic import field_validator
+from pydantic import BeforeValidator
 from pydantic_settings import BaseSettings
+
+
+def _parse_cors(v: str | list[str]) -> list[str]:
+    if isinstance(v, list):
+        return v
+    v = v.strip()
+    if not v:
+        return []
+    if v.startswith("["):
+        return json.loads(v)
+    return [origin.strip() for origin in v.split(",") if origin.strip()]
+
+
+CorsOrigins = Annotated[list[str], BeforeValidator(_parse_cors)]
 
 
 class Settings(BaseSettings):
@@ -29,17 +44,7 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
 
     # CORS — accepts JSON array or comma-separated string
-    CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:3000"]
-
-    @field_validator("CORS_ORIGINS", mode="before")
-    @classmethod
-    def parse_cors_origins(cls, v: str | list[str]) -> list[str]:
-        if isinstance(v, list):
-            return v
-        v = v.strip()
-        if v.startswith("["):
-            return json.loads(v)
-        return [origin.strip() for origin in v.split(",") if origin.strip()]
+    CORS_ORIGINS: CorsOrigins = ["http://localhost:5173", "http://localhost:3000"]
 
 
 settings = Settings()
