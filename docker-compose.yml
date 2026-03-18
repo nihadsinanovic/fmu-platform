@@ -45,10 +45,11 @@ services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    env_file: .env
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-fmu_platform}
       POSTGRES_USER: ${POSTGRES_USER:-fmu}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
@@ -62,6 +63,7 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    env_file: .env
     command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-changeme}
     volumes:
       - redisdata:/data

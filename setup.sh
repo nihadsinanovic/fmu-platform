@@ -41,8 +41,8 @@ TEMP_PATH=/opt/fmu-platform/temp
 SECRET_KEY=$SECRET_KEY
 ACCESS_TOKEN_EXPIRE_MINUTES=60
 
-# CORS — update with your domain
-CORS_ORIGINS=["http://localhost:5173"]
+# CORS — update with your domain (comma-separated or JSON array)
+CORS_ORIGINS=http://localhost:5173,http://localhost:3000
 EOF
 
 echo "✓ .env created with generated secrets."
