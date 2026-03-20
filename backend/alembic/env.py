@@ -8,7 +8,7 @@ from app.models.base import Base
 from app.models import FMULibrary, Project, SimulationJob  # noqa: F401
 
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+config.set_main_option("sqlalchemy.url", settings.sync_database_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

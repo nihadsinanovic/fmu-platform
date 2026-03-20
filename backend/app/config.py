@@ -23,8 +23,16 @@ CorsOrigins = Annotated[list[str], BeforeValidator(_parse_cors)]
 class Settings(BaseSettings):
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
-    # Database
-    DATABASE_URL: str = "postgresql://user:pass@localhost/fmu_platform"
+    # Database (async for FastAPI, sync for Alembic)
+    DATABASE_URL: str = "postgresql+asyncpg://user:pass@localhost/fmu_platform"
+    DATABASE_URL_SYNC: str = ""
+
+    @property
+    def sync_database_url(self) -> str:
+        """Return sync URL for Alembic. Falls back to converting async URL."""
+        if self.DATABASE_URL_SYNC:
+            return self.DATABASE_URL_SYNC
+        return self.DATABASE_URL.replace("+asyncpg", "")
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
