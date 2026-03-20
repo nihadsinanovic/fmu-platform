@@ -1,4 +1,21 @@
 services:
+  # ── Reverse Proxy (automatic HTTPS) ──────────────────────────────────
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data       # TLS certs
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+
+  # ── FastAPI Backend ──────────────────────────────────────────────────
   api:
     build: ./backend
     restart: unless-stopped
@@ -14,9 +31,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: >
-      sh -c "alembic upgrade head &&
-             uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
       interval: 10s
@@ -24,10 +38,16 @@ services:
       retries: 3
       start_period: 30s
 
+  # ── Celery Worker (1 worker per AMESim license) ──────────────────────
   celery-worker:
     build: ./backend
     restart: unless-stopped
     env_file: .env
+    entrypoint: []
+    command: >
+      celery -A workers.celery_app worker
+      --loglevel=info
+      --concurrency=${LICENSE_POOL_SIZE:-3}
     volumes:
       - fmu-library:/opt/fmu-platform/fmu-library
       - projects:/opt/fmu-platform/projects
@@ -37,11 +57,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: >
-      celery -A workers.celery_app worker
-      --loglevel=info
-      --concurrency=${LICENSE_POOL_SIZE:-3}
 
+  # ── PostgreSQL ───────────────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -52,14 +69,15 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
     volumes:
       - pgdata:/var/lib/postgresql/data
-    ports:
-      - "127.0.0.1:5432:5432"
+    expose:
+      - "5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fmu}"]
       interval: 5s
       timeout: 3s
       retries: 5
 
+  # ── Redis ────────────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
     restart: unless-stopped
@@ -67,8 +85,8 @@ services:
     command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-changeme}
     volumes:
       - redisdata:/data
-    ports:
-      - "127.0.0.1:6379:6379"
+    expose:
+      - "6379"
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-changeme}", "ping"]
       interval: 5s
@@ -81,3 +99,5 @@ volumes:
   fmu-library:
   projects:
   temp:
+  caddy_data:
+  caddy_config:

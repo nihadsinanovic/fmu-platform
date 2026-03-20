@@ -5,7 +5,6 @@
 # Usage:
 #   ./setup.sh                    Interactive setup (asks for domain, license count, etc.)
 #   ./setup.sh --defaults         Use all defaults (localhost, 3 licenses)
-#   ./setup.sh --coolify          Also inject env vars into Coolify via its API
 #
 set -euo pipefail
 
@@ -15,21 +14,17 @@ gen_hex() { openssl rand -hex "$1"; }
 
 info()  { echo "  ✓ $1"; }
 warn()  { echo "  ⚠ $1"; }
-error() { echo "  ✗ $1" >&2; }
 
 # ── Parse flags ──────────────────────────────────────────────────────────────
 
 USE_DEFAULTS=false
-INJECT_COOLIFY=false
 
 for arg in "$@"; do
   case "$arg" in
     --defaults) USE_DEFAULTS=true ;;
-    --coolify)  INJECT_COOLIFY=true ;;
     --help|-h)
-      echo "Usage: ./setup.sh [--defaults] [--coolify]"
+      echo "Usage: ./setup.sh [--defaults]"
       echo "  --defaults   Skip prompts, use default values"
-      echo "  --coolify    Inject env vars into Coolify via API"
       exit 0
       ;;
   esac
@@ -85,6 +80,9 @@ cat > "$ENV_FILE" <<EOF
 # │  Edit as needed, but DO NOT commit this file to git.                │
 # └──────────────────────────────────────────────────────────────────────┘
 
+# === Domain (used by Caddy for automatic HTTPS) ===
+DOMAIN=$DOMAIN
+
 # === PostgreSQL ===
 POSTGRES_DB=fmu_platform
 POSTGRES_USER=fmu
@@ -116,118 +114,29 @@ EOF
 
 info ".env created with generated secrets"
 
-# ── Coolify injection ────────────────────────────────────────────────────────
-
-if [ "$INJECT_COOLIFY" = true ]; then
-  echo ""
-  echo "  Coolify Integration"
-  echo "  -------------------"
-
-  # Try to auto-detect Coolify
-  if command -v docker &>/dev/null && docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^coolify$"; then
-    info "Coolify detected on this server"
-  else
-    warn "Coolify not detected locally — make sure you're running this on the Coolify server"
-  fi
-
-  # Get or prompt for Coolify details
-  COOLIFY_BASE=${COOLIFY_BASE_URL:-}
-  if [ -z "$COOLIFY_BASE" ]; then
-    read -rp "  Coolify URL (e.g. http://localhost:8080): " COOLIFY_BASE
-  fi
-
-  COOLIFY_TOKEN=${COOLIFY_API_TOKEN:-}
-  if [ -z "$COOLIFY_TOKEN" ]; then
-    echo "  You need a Coolify API token. Create one at:"
-    echo "    $COOLIFY_BASE → Settings → Keys & Tokens → Generate"
-    read -rp "  Coolify API token: " COOLIFY_TOKEN
-  fi
-
-  APP_UUID=${COOLIFY_APP_UUID:-}
-  if [ -z "$APP_UUID" ]; then
-    echo ""
-    echo "  Fetching applications from Coolify..."
-    APPS=$(curl -sf -H "Authorization: Bearer $COOLIFY_TOKEN" \
-      "$COOLIFY_BASE/api/v1/applications" 2>/dev/null || echo "")
-
-    if [ -n "$APPS" ] && command -v python3 &>/dev/null; then
-      echo "  Available applications:"
-      echo "$APPS" | python3 -c "
-import sys, json
-apps = json.load(sys.stdin)
-for a in apps:
-    print(f\"    {a.get('uuid', '?'):30s}  {a.get('name', 'unnamed')}\")
-" 2>/dev/null || echo "    (could not parse — enter UUID manually)"
-    fi
-
-    read -rp "  Application UUID: " APP_UUID
-  fi
-
-  echo ""
-  echo "  Injecting env vars into Coolify..."
-
-  # Build the JSON payload
-  ENV_JSON=$(python3 -c "
-import json
-
-envs = [
-    {'key': 'POSTGRES_DB',                 'value': 'fmu_platform',   'is_preview': False},
-    {'key': 'POSTGRES_USER',               'value': 'fmu',           'is_preview': False},
-    {'key': 'POSTGRES_PASSWORD',           'value': '$PG_PASS',      'is_preview': False},
-    {'key': 'REDIS_PASSWORD',              'value': '$REDIS_PASS',   'is_preview': False},
-    {'key': 'DATABASE_URL',                'value': 'postgresql+asyncpg://fmu:${PG_PASS}@postgres/fmu_platform', 'is_preview': False},
-    {'key': 'DATABASE_URL_SYNC',           'value': 'postgresql://fmu:${PG_PASS}@postgres/fmu_platform', 'is_preview': False},
-    {'key': 'REDIS_URL',                   'value': 'redis://:${REDIS_PASS}@redis:6379/0', 'is_preview': False},
-    {'key': 'LICENSE_POOL_SIZE',           'value': '$LICENSE_COUNT', 'is_preview': False},
-    {'key': 'FMU_LIBRARY_PATH',           'value': '/opt/fmu-platform/fmu-library', 'is_preview': False},
-    {'key': 'PROJECTS_PATH',              'value': '/opt/fmu-platform/projects',    'is_preview': False},
-    {'key': 'TEMP_PATH',                  'value': '/opt/fmu-platform/temp',        'is_preview': False},
-    {'key': 'SECRET_KEY',                 'value': '$SECRET_KEY',    'is_preview': False},
-    {'key': 'ACCESS_TOKEN_EXPIRE_MINUTES','value': '60',            'is_preview': False},
-    {'key': 'CORS_ORIGINS',              'value': '$CORS_ORIGINS',  'is_preview': False, 'is_literal': True},
-]
-print(json.dumps(envs))
-")
-
-  HTTP_CODE=$(curl -s -o /tmp/coolify_response.json -w "%{http_code}" \
-    -X PATCH \
-    -H "Authorization: Bearer $COOLIFY_TOKEN" \
-    -H "Content-Type: application/json" \
-    -d "$ENV_JSON" \
-    "$COOLIFY_BASE/api/v1/applications/$APP_UUID/envs/bulk")
-
-  if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-    info "Environment variables injected into Coolify (HTTP $HTTP_CODE)"
-  else
-    error "Failed to inject env vars (HTTP $HTTP_CODE)"
-    cat /tmp/coolify_response.json 2>/dev/null
-    echo ""
-    echo "  You can set them manually in Coolify's UI instead."
-  fi
-
-  rm -f /tmp/coolify_response.json
-fi
-
 # ── Summary ──────────────────────────────────────────────────────────────────
 
 echo ""
-echo "  ┌──────────────────────────────────────────┐"
-echo "  │  Setup complete                          │"
-echo "  ├──────────────────────────────────────────┤"
-echo "  │  PostgreSQL password: ${PG_PASS:0:8}...  │"
-echo "  │  Redis password:      ${REDIS_PASS:0:8}...  │"
-echo "  │  Secret key:          ${SECRET_KEY:0:8}...  │"
-echo "  │  License slots:       $LICENSE_COUNT                    │"
-echo "  │  CORS origins:        $CORS_ORIGINS  │"
-echo "  └──────────────────────────────────────────┘"
+echo "  ┌──────────────────────────────────────────────┐"
+echo "  │  Setup complete                              │"
+echo "  ├──────────────────────────────────────────────┤"
+echo "  │  Domain:        $DOMAIN"
+echo "  │  PG password:   ${PG_PASS:0:8}..."
+echo "  │  Redis password: ${REDIS_PASS:0:8}..."
+echo "  │  Secret key:    ${SECRET_KEY:0:8}..."
+echo "  │  License slots: $LICENSE_COUNT"
+echo "  │  CORS origins:  $CORS_ORIGINS"
+echo "  └──────────────────────────────────────────────┘"
 echo ""
+echo "  Next steps:"
+echo "    1. docker compose up -d --build"
 
-if [ "$INJECT_COOLIFY" = true ]; then
-  echo "  Next: Trigger a redeploy from Coolify's UI to pick up the new env vars."
+if [ "$DOMAIN" != "localhost" ]; then
+  echo "    2. Make sure DNS for $DOMAIN points to this server"
+  echo "    3. Caddy will automatically get an HTTPS certificate"
+  echo "    4. Open https://$DOMAIN/api/docs"
 else
-  echo "  Next steps:"
-  echo "    1. docker compose up -d"
-  echo "    2. Open http://$DOMAIN:8000/api/docs"
+  echo "    2. Open http://localhost:8000/api/docs"
 fi
 
 echo ""

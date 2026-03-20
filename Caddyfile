@@ -1,0 +1,32 @@
+# FMU Platform — Caddy Reverse Proxy
+#
+# Replace {$DOMAIN} with your actual domain, or set it in .env
+# Caddy handles HTTPS automatically (Let's Encrypt + auto-renewal)
+
+{$DOMAIN:localhost} {
+	# API endpoints
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	# WebSocket for job progress
+	handle /ws/* {
+		reverse_proxy api:8000
+	}
+
+	# Health check (useful for monitoring)
+	handle /api/health {
+		reverse_proxy api:8000
+	}
+
+	# Frontend (when deployed — static files or proxy to frontend container)
+	# For now, return a simple response
+	handle {
+		respond "FMU Platform API is running. See /api/docs" 200
+	}
+
+	# Upload size limit for SSP packages
+	request_body {
+		max_size 100MB
+	}
+}
