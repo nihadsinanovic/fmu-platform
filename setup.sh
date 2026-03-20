@@ -45,6 +45,7 @@ echo ""
 
 if [ "$USE_DEFAULTS" = true ]; then
   DOMAIN="localhost"
+  CADDY_DOMAIN=":80"
   LICENSE_COUNT=3
   CORS_ORIGINS="http://localhost:5173,http://localhost:3000"
 else
@@ -55,8 +56,10 @@ else
   LICENSE_COUNT=${LICENSE_COUNT:-3}
 
   if [ "$DOMAIN" = "localhost" ]; then
+    CADDY_DOMAIN=":80"  # Plain HTTP, no TLS
     CORS_ORIGINS="http://localhost:5173,http://localhost:3000"
   else
+    CADDY_DOMAIN="$DOMAIN"  # Caddy auto-HTTPS with Let's Encrypt
     DEFAULT_CORS="https://$DOMAIN"
     read -rp "  CORS origins (comma-separated) [$DEFAULT_CORS]: " CORS_ORIGINS
     CORS_ORIGINS=${CORS_ORIGINS:-$DEFAULT_CORS}
@@ -81,7 +84,8 @@ cat > "$ENV_FILE" <<EOF
 # └──────────────────────────────────────────────────────────────────────┘
 
 # === Domain (used by Caddy for automatic HTTPS) ===
-DOMAIN=$DOMAIN
+# ":80" = plain HTTP (no domain), "fmu.example.com" = auto HTTPS
+DOMAIN=$CADDY_DOMAIN
 
 # === PostgreSQL ===
 POSTGRES_DB=fmu_platform

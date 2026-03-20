@@ -1,9 +1,11 @@
 # FMU Platform — Caddy Reverse Proxy
 #
-# Replace {$DOMAIN} with your actual domain, or set it in .env
-# Caddy handles HTTPS automatically (Let's Encrypt + auto-renewal)
+# When DOMAIN is set to a real domain (e.g. fmu.example.com), Caddy
+# automatically gets an HTTPS cert from Let's Encrypt.
+#
+# When DOMAIN is "localhost" or empty, serves plain HTTP on port 80.
 
-{$DOMAIN:localhost} {
+{$DOMAIN::80} {
 	# API endpoints
 	handle /api/* {
 		reverse_proxy api:8000
@@ -11,11 +13,6 @@
 
 	# WebSocket for job progress
 	handle /ws/* {
-		reverse_proxy api:8000
-	}
-
-	# Health check (useful for monitoring)
-	handle /api/health {
 		reverse_proxy api:8000
 	}
 
