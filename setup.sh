@@ -87,6 +87,9 @@ cat > "$ENV_FILE" <<EOF
 # ":80" = plain HTTP (no domain), "fmu.example.com" = auto HTTPS
 DOMAIN=$CADDY_DOMAIN
 
+# === Staging domain (set by setup-staging.sh, leave empty to disable) ===
+STAGING_DOMAIN=
+
 # === PostgreSQL ===
 POSTGRES_DB=fmu_platform
 POSTGRES_USER=fmu

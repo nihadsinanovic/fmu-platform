@@ -1,28 +1,61 @@
 # FMU Platform — Caddy Reverse Proxy
 #
-# When DOMAIN is set to a real domain (e.g. fmu.example.com), Caddy
-# automatically gets an HTTPS cert from Let's Encrypt.
+# Routes:
+#   {DOMAIN}         → production API
+#   {STAGING_DOMAIN}  → staging API
 #
-# When DOMAIN is "localhost" or empty, serves plain HTTP on port 80.
+# When DOMAIN is ":80", serves plain HTTP (no TLS) — for dev/testing.
+# When DOMAIN is a real domain, Caddy auto-provisions HTTPS via Let's Encrypt.
 
+# ── Production ───────────────────────────────────────────────────────────
 {$DOMAIN::80} {
-	# API endpoints
 	handle /api/* {
 		reverse_proxy api:8000
 	}
 
-	# WebSocket for job progress
+	handle /docs* {
+		reverse_proxy api:8000
+	}
+
+	handle /openapi.json {
+		reverse_proxy api:8000
+	}
+
 	handle /ws/* {
 		reverse_proxy api:8000
 	}
 
-	# Frontend (when deployed — static files or proxy to frontend container)
-	# For now, return a simple response
 	handle {
-		respond "FMU Platform API is running. See /api/docs" 200
+		respond "FMU Platform API (production). See /docs" 200
 	}
 
-	# Upload size limit for SSP packages
+	request_body {
+		max_size 100MB
+	}
+}
+
+# ── Staging (only active when STAGING_DOMAIN is set) ─────────────────────
+{$STAGING_DOMAIN:} {
+	handle /api/* {
+		reverse_proxy api-staging:8000
+	}
+
+	handle /docs* {
+		reverse_proxy api-staging:8000
+	}
+
+	handle /openapi.json {
+		reverse_proxy api-staging:8000
+	}
+
+	handle /ws/* {
+		reverse_proxy api-staging:8000
+	}
+
+	handle {
+		respond "FMU Platform API (staging). See /docs" 200
+	}
+
 	request_body {
 		max_size 100MB
 	}

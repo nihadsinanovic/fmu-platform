@@ -190,6 +190,14 @@ deploy.sh pulls latest from git, rebuilds images, and restarts containers.
 - `LICENSE_POOL_SIZE` — Number of AMESim licenses = Celery worker concurrency
 - `CORS_ORIGINS` — Comma-separated list of allowed frontend origins
 
+### Staging environment:
+Staging runs alongside production on the same VPS, with its own DB, Redis, and Celery worker. Caddy routes by subdomain.
+```bash
+./setup-staging.sh     # Generates .env.staging, adds STAGING_DOMAIN to .env
+./deploy-staging.sh    # Builds and starts staging containers
+```
+Staging containers use project name `fmu-staging`. To check logs: `docker compose -f docker-compose.staging.yml -p fmu-staging logs`
+
 ### VPS access:
 - Server: `root@194.163.143.24`
 - **Change the root password** — the old one was exposed. Set up SSH key auth.

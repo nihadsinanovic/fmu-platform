@@ -1,0 +1,109 @@
+# Staging environment — runs alongside production on the same VPS.
+#
+# Usage:
+#   docker compose -f docker-compose.staging.yml --env-file .env.staging -p fmu-staging up -d --build
+#
+# Completely isolated: own DB, Redis, Celery, API.
+# Shares the Caddy instance from the main docker-compose.yml.
+
+services:
+  # ── Staging API ────────────────────────────────────────────────────────
+  api-staging:
+    build: ./backend
+    restart: unless-stopped
+    env_file: .env.staging
+    expose:
+      - "8000"
+    volumes:
+      - staging-fmu-library:/opt/fmu-platform/fmu-library
+      - staging-projects:/opt/fmu-platform/projects
+      - staging-temp:/opt/fmu-platform/temp
+    depends_on:
+      postgres-staging:
+        condition: service_healthy
+      redis-staging:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - staging
+      - shared
+
+  # ── Staging Celery Worker ──────────────────────────────────────────────
+  celery-worker-staging:
+    build: ./backend
+    restart: unless-stopped
+    env_file: .env.staging
+    entrypoint: []
+    command: >
+      celery -A workers.celery_app worker
+      --loglevel=info
+      --concurrency=${LICENSE_POOL_SIZE:-1}
+    volumes:
+      - staging-fmu-library:/opt/fmu-platform/fmu-library
+      - staging-projects:/opt/fmu-platform/projects
+      - staging-temp:/opt/fmu-platform/temp
+    depends_on:
+      postgres-staging:
+        condition: service_healthy
+      redis-staging:
+        condition: service_healthy
+    networks:
+      - staging
+
+  # ── Staging PostgreSQL ─────────────────────────────────────────────────
+  postgres-staging:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    env_file: .env.staging
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-fmu_platform_staging}
+      POSTGRES_USER: ${POSTGRES_USER:-fmu}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    volumes:
+      - staging-pgdata:/var/lib/postgresql/data
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fmu}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - staging
+
+  # ── Staging Redis ──────────────────────────────────────────────────────
+  redis-staging:
+    image: redis:7-alpine
+    restart: unless-stopped
+    env_file: .env.staging
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-changeme}
+    volumes:
+      - staging-redisdata:/data
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-changeme}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - staging
+
+volumes:
+  staging-pgdata:
+  staging-redisdata:
+  staging-fmu-library:
+  staging-projects:
+  staging-temp:
+
+networks:
+  staging:
+    driver: bridge
+  shared:
+    external: true
+    name: fmu-platform_default   # Connect to production's network so Caddy can reach us
