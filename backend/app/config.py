@@ -1,23 +1,7 @@
 import json
 from pathlib import Path
-from typing import Annotated
 
-from pydantic import BeforeValidator
 from pydantic_settings import BaseSettings
-
-
-def _parse_cors(v: str | list[str]) -> list[str]:
-    if isinstance(v, list):
-        return v
-    v = v.strip()
-    if not v:
-        return []
-    if v.startswith("["):
-        return json.loads(v)
-    return [origin.strip() for origin in v.split(",") if origin.strip()]
-
-
-CorsOrigins = Annotated[list[str], BeforeValidator(_parse_cors)]
 
 
 class Settings(BaseSettings):
@@ -51,8 +35,17 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     ALGORITHM: str = "HS256"
 
-    # CORS — accepts JSON array or comma-separated string
-    CORS_ORIGINS: CorsOrigins = ["http://localhost:5173", "http://localhost:3000"]
+    # CORS — stored as string, parsed via property
+    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        v = self.CORS_ORIGINS.strip()
+        if not v:
+            return []
+        if v.startswith("["):
+            return json.loads(v)
+        return [origin.strip() for origin in v.split(",") if origin.strip()]
 
 
 settings = Settings()
