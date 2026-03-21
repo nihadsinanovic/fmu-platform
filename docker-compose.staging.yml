@@ -43,6 +43,10 @@ services:
       celery -A workers.celery_app worker
       --loglevel=info
       --concurrency=${LICENSE_POOL_SIZE:-1}
+    environment:
+      SALT_LICENSE_SERVER: ${AMESIM_LICENSE_SERVER:-}
+      LMS_LICENSE: ${AMESIM_LICENSE_SERVER:-}
+      SIEMENS_LICENSE_FILE: ${AMESIM_LICENSE_SERVER:-}
     volumes:
       - staging-fmu-library:/opt/fmu-platform/fmu-library
       - staging-projects:/opt/fmu-platform/projects

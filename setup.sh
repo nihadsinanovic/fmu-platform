@@ -47,6 +47,7 @@ if [ "$USE_DEFAULTS" = true ]; then
   DOMAIN="localhost"
   CADDY_DOMAIN=":80"
   LICENSE_COUNT=3
+  AMESIM_LICENSE=""
   CORS_ORIGINS="http://localhost:5173,http://localhost:3000"
 else
   read -rp "  Domain (or 'localhost' for local dev) [localhost]: " DOMAIN
@@ -54,6 +55,9 @@ else
 
   read -rp "  Number of AMESim licenses available [3]: " LICENSE_COUNT
   LICENSE_COUNT=${LICENSE_COUNT:-3}
+
+  read -rp "  AMESim license server (e.g. 29000@host) []: " AMESIM_LICENSE
+  AMESIM_LICENSE=${AMESIM_LICENSE:-}
 
   if [ "$DOMAIN" = "localhost" ]; then
     CADDY_DOMAIN=":80"  # Plain HTTP, no TLS
@@ -105,6 +109,7 @@ REDIS_URL=redis://:${REDIS_PASS}@redis:6379/0
 
 # === License Management ===
 LICENSE_POOL_SIZE=$LICENSE_COUNT
+AMESIM_LICENSE_SERVER=$AMESIM_LICENSE
 
 # === Storage Paths (inside containers) ===
 FMU_LIBRARY_PATH=/opt/fmu-platform/fmu-library
@@ -132,6 +137,7 @@ echo "  │  PG password:   ${PG_PASS:0:8}..."
 echo "  │  Redis password: ${REDIS_PASS:0:8}..."
 echo "  │  Secret key:    ${SECRET_KEY:0:8}..."
 echo "  │  License slots: $LICENSE_COUNT"
+echo "  │  License server: ${AMESIM_LICENSE:-<not set>}"
 echo "  │  CORS origins:  $CORS_ORIGINS"
 echo "  └──────────────────────────────────────────────┘"
 echo ""

@@ -140,13 +140,20 @@ class SimulationRunner:
         """Run simulation using PyFMI's CoupledFMUModelME2."""
         from pyfmi import load_fmu
 
-        # Load FMU instances
+        from engine.fmu_utils import prepare_fmu_for_simulation
+
+        # Prepare and load FMU instances
         fmu_instances: dict[str, Any] = {}
+        patch_dir = unpack_dir / "_patched"
+        patch_dir.mkdir(exist_ok=True)
+
         for comp in components:
             fmu_path = unpack_dir / comp["source"]
             if not fmu_path.exists():
                 raise SimulationError(f"FMU file not found: {fmu_path}")
-            fmu = load_fmu(str(fmu_path))
+            # Patch needsExecutionTool and other AMESim quirks
+            ready_path = prepare_fmu_for_simulation(fmu_path, patch_dir)
+            fmu = load_fmu(str(ready_path))
             fmu_instances[comp["name"]] = fmu
 
         # Apply parameters

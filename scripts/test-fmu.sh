@@ -23,16 +23,33 @@ fi
 # 2. Patch needsExecutionTool flag and copy FMU into container
 echo ">>> Patching FMU (needsExecutionTool=true → false)..."
 PATCHED_FMU="/tmp/appartment_patched.fmu"
-PATCH_DIR="/tmp/fmu_patch_$$"
-mkdir -p "$PATCH_DIR"
-cp "$FMU_PATH" "$PATCHED_FMU"
-cd "$PATCH_DIR"
-unzip -q "$PATCHED_FMU"
-sed -i 's/needsExecutionTool="true"/needsExecutionTool="false"/g' modelDescription.xml
-zip -q -r "$PATCHED_FMU" .
-cd /
-rm -rf "$PATCH_DIR"
-echo "    Patched."
+python3 -c "
+import zipfile, os, tempfile, shutil
+
+src = '$FMU_PATH'
+dst = '$PATCHED_FMU'
+tmp = tempfile.mkdtemp()
+
+with zipfile.ZipFile(src, 'r') as zin:
+    zin.extractall(tmp)
+
+md_path = os.path.join(tmp, 'modelDescription.xml')
+with open(md_path, 'r') as f:
+    content = f.read()
+content = content.replace('needsExecutionTool=\"true\"', 'needsExecutionTool=\"false\"')
+with open(md_path, 'w') as f:
+    f.write(content)
+
+with zipfile.ZipFile(dst, 'w', zipfile.ZIP_DEFLATED) as zout:
+    for root, dirs, files in os.walk(tmp):
+        for file in files:
+            full = os.path.join(root, file)
+            arcname = os.path.relpath(full, tmp)
+            zout.write(full, arcname)
+
+shutil.rmtree(tmp)
+print('    Patched.')
+"
 
 echo ">>> Copying patched FMU into container..."
 docker cp "$PATCHED_FMU" "$CONTAINER:/tmp/appartment.fmu"

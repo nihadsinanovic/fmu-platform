@@ -1,13 +1,20 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+import shutil
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.models.fmu_library import FMULibrary
+from engine.fmu_utils import inspect_fmu, patch_fmu
 
 router = APIRouter(prefix="/api/fmu-library", tags=["fmu-library"])
 
+
+# ── Response / request schemas ────────────────────────────────────────
 
 class FMUListItem(BaseModel):
     model_config = {"from_attributes": True}
@@ -32,6 +39,21 @@ class FMURegister(BaseModel):
     manifest: dict
 
 
+class FMUUploadResponse(BaseModel):
+    type_name: str
+    version: str
+    fmu_path: str
+    fmi_version: str
+    fmi_type: str
+    generation_tool: str
+    inputs: list[str]
+    outputs: list[str]
+    patched: bool
+    warnings: list[str]
+
+
+# ── Endpoints ─────────────────────────────────────────────────────────
+
 @router.get("", response_model=list[FMUListItem])
 async def list_fmus(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(FMULibrary).order_by(FMULibrary.type_name))
@@ -51,6 +73,7 @@ async def get_manifest(type_name: str, db: AsyncSession = Depends(get_db)):
 
 @router.post("", response_model=FMUDetail, status_code=status.HTTP_201_CREATED)
 async def register_fmu(body: FMURegister, db: AsyncSession = Depends(get_db)):
+    """Register an FMU already on the server filesystem (manual registration)."""
     existing = await db.execute(
         select(FMULibrary).where(FMULibrary.type_name == body.type_name)
     )
@@ -67,3 +90,172 @@ async def register_fmu(body: FMURegister, db: AsyncSession = Depends(get_db)):
     await db.flush()
     await db.refresh(fmu)
     return fmu
+
+
+@router.post("/upload", response_model=FMUUploadResponse, status_code=status.HTTP_201_CREATED)
+async def upload_fmu(
+    file: UploadFile,
+    type_name: str,
+    version: str = "1.0.0",
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload an FMU file, validate it, patch if needed, and register it.
+
+    The FMU is inspected for:
+    - Valid FMI 2.0 structure (modelDescription.xml, linux64 binary)
+    - needsExecutionTool flag (patched automatically for AMESim FMUs)
+    - Inputs and outputs
+
+    The patched FMU is stored in the FMU library directory and registered
+    in the database with an auto-generated manifest.
+    """
+    if not file.filename or not file.filename.endswith(".fmu"):
+        raise HTTPException(status_code=400, detail="File must be a .fmu file")
+
+    # Check for duplicate type_name
+    existing = await db.execute(
+        select(FMULibrary).where(FMULibrary.type_name == type_name)
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail=f"FMU type '{type_name}' already exists")
+
+    # Save uploaded file to temp location
+    temp_dir = settings.TEMP_PATH / "uploads"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    temp_path = temp_dir / file.filename
+
+    try:
+        with open(temp_path, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+
+        # Inspect the FMU
+        inspection = inspect_fmu(temp_path)
+        warnings = list(inspection.warnings)
+
+        if not inspection.fmi_version:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid FMU: missing or unparseable modelDescription.xml",
+            )
+
+        if not inspection.has_linux64_binary:
+            warnings.append(
+                "No linux64 binary found. This FMU will not execute on the server. "
+                "Re-export from AMESim with linux64 target platform."
+            )
+
+        # Patch if needed (needsExecutionTool, etc.)
+        was_patched = inspection.needs_execution_tool
+        dest_dir = settings.FMU_LIBRARY_PATH / type_name
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest_path = dest_dir / file.filename
+
+        if was_patched:
+            patch_fmu(temp_path, dest_path, fix_needs_execution_tool=True)
+            warnings.append("Patched needsExecutionTool='true' → 'false' for PyFMI compatibility")
+        else:
+            shutil.copy2(str(temp_path), str(dest_path))
+
+        # Build manifest from inspection
+        manifest = {
+            "fmu_type": type_name,
+            "fmi_version": inspection.fmi_version,
+            "fmi_type": inspection.fmi_type,
+            "version": version,
+            "generation_tool": inspection.generation_tool,
+            "guid": inspection.guid,
+            "model_identifier": inspection.model_identifier,
+            "inputs": [
+                {"name": name, "type": "Real", "causality": "input"}
+                for name in inspection.inputs
+            ],
+            "outputs": [
+                {"name": name, "type": "Real", "causality": "output"}
+                for name in inspection.outputs
+            ],
+            "parameters": [],
+            "compatible_connections": {},
+        }
+
+        # Register in database
+        fmu_record = FMULibrary(
+            type_name=type_name,
+            version=version,
+            fmu_path=str(dest_path),
+            manifest=manifest,
+        )
+        db.add(fmu_record)
+        await db.flush()
+        await db.refresh(fmu_record)
+
+        return FMUUploadResponse(
+            type_name=type_name,
+            version=version,
+            fmu_path=str(dest_path),
+            fmi_version=inspection.fmi_version,
+            fmi_type=inspection.fmi_type,
+            generation_tool=inspection.generation_tool,
+            inputs=inspection.inputs,
+            outputs=inspection.outputs,
+            patched=was_patched,
+            warnings=warnings,
+        )
+
+    finally:
+        # Clean up temp file
+        if temp_path.exists():
+            temp_path.unlink()
+
+
+@router.post("/{type_name}/resources")
+async def upload_resource(
+    type_name: str,
+    file: UploadFile,
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload a resource/data file for an existing FMU.
+
+    AMESim FMUs sometimes require external data files (e.g., weather data,
+    lookup tables) that weren't bundled during export. This endpoint lets
+    you inject them into the FMU's resources/ directory.
+    """
+    # Find the FMU
+    result = await db.execute(
+        select(FMULibrary).where(FMULibrary.type_name == type_name)
+    )
+    fmu_record = result.scalar_one_or_none()
+    if not fmu_record:
+        raise HTTPException(status_code=404, detail=f"FMU type '{type_name}' not found")
+
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="File must have a name")
+
+    fmu_path = Path(fmu_record.fmu_path)
+    if not fmu_path.exists():
+        raise HTTPException(status_code=404, detail="FMU file not found on disk")
+
+    # Save resource to temp, then inject into FMU
+    temp_dir = settings.TEMP_PATH / "uploads"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    temp_resource = temp_dir / file.filename
+
+    try:
+        with open(temp_resource, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+
+        patch_fmu(
+            fmu_path,
+            fmu_path,  # overwrite in-place
+            fix_needs_execution_tool=False,
+            inject_resources={file.filename: temp_resource},
+        )
+
+        return {
+            "message": f"Resource '{file.filename}' injected into {type_name}",
+            "type_name": type_name,
+            "resource": file.filename,
+        }
+
+    finally:
+        if temp_resource.exists():
+            temp_resource.unlink()

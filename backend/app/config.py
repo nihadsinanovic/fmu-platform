@@ -23,7 +23,7 @@ class Settings(BaseSettings):
 
     # License management
     LICENSE_POOL_SIZE: int = 3
-    AMESIM_LICENSE_SERVER: str = ""
+    AMESIM_LICENSE_SERVER: str = ""  # e.g. "29000@16.16.200.137"
 
     # File paths
     FMU_LIBRARY_PATH: Path = Path("/opt/fmu-platform/fmu-library")
