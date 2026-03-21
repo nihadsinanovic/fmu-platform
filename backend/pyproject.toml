@@ -24,7 +24,8 @@ dependencies = [
 
 [project.optional-dependencies]
 simulation = [
-    "PyFMI>=2.12.0",
+    # PyFMI and Assimulo are installed via conda-forge (see Dockerfile)
+    # FMPy is a lightweight alternative for single-FMU testing
     "FMPy>=0.3.0",
 ]
 dev = [
