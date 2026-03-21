@@ -20,9 +20,23 @@ if [ ! -f "$FMU_PATH" ]; then
     exit 1
 fi
 
-# 2. Copy FMU into container
-echo ">>> Copying FMU into container..."
-docker cp "$FMU_PATH" "$CONTAINER:/tmp/appartment.fmu"
+# 2. Patch needsExecutionTool flag and copy FMU into container
+echo ">>> Patching FMU (needsExecutionTool=true → false)..."
+PATCHED_FMU="/tmp/appartment_patched.fmu"
+PATCH_DIR="/tmp/fmu_patch_$$"
+mkdir -p "$PATCH_DIR"
+cp "$FMU_PATH" "$PATCHED_FMU"
+cd "$PATCH_DIR"
+unzip -q "$PATCHED_FMU"
+sed -i 's/needsExecutionTool="true"/needsExecutionTool="false"/g' modelDescription.xml
+zip -q -r "$PATCHED_FMU" .
+cd /
+rm -rf "$PATCH_DIR"
+echo "    Patched."
+
+echo ">>> Copying patched FMU into container..."
+docker cp "$PATCHED_FMU" "$CONTAINER:/tmp/appartment.fmu"
+rm -f "$PATCHED_FMU"
 echo "    Done."
 
 # 3. Run the test inside the container
@@ -102,7 +116,7 @@ try:
     res = model.simulate(
         start_time=0.0,
         final_time=10.0,
-        input=(['${input_name}'], input_data),
+        input=([input_name], input_data),
         options=opts
     )
 
