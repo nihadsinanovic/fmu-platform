@@ -287,15 +287,21 @@ def _run_fmu_test_sync(
     ncp: int,
 ) -> dict:
     """Run a single-FMU test simulation synchronously. Called from a thread pool."""
+    import logging
     import os
 
     import numpy as np
+
+    logger = logging.getLogger(__name__)
 
     # Set AMESim license env vars so the FMU shared library can acquire a license
     if settings.AMESIM_LICENSE_SERVER:
         os.environ["SALT_LICENSE_SERVER"] = settings.AMESIM_LICENSE_SERVER
         os.environ["LMS_LICENSE"] = settings.AMESIM_LICENSE_SERVER
         os.environ["SIEMENS_LICENSE_FILE"] = settings.AMESIM_LICENSE_SERVER
+        logger.info("License env vars set: AMESIM_LICENSE_SERVER=%s", settings.AMESIM_LICENSE_SERVER)
+    else:
+        logger.warning("AMESIM_LICENSE_SERVER is not configured — FMU may fail if it requires a license")
 
     try:
         from pyfmi import load_fmu  # type: ignore[import]
@@ -306,9 +312,21 @@ def _run_fmu_test_sync(
         work_path = Path(work_dir)
         from engine.fmu_utils import prepare_fmu_for_simulation
 
+        logger.info("Preparing FMU for simulation: %s → %s", fmu_path, work_path)
         ready_fmu = prepare_fmu_for_simulation(fmu_path, work_path)
+        logger.info("FMU ready at: %s", ready_fmu)
 
-        model = load_fmu(str(ready_fmu), log_level=0)
+        # List files in the work dir to help debug missing resources
+        work_files = list(work_path.rglob("*"))
+        logger.info("Work dir contents (%d files): %s", len(work_files), [str(f.relative_to(work_path)) for f in work_files])
+
+        logger.info("Calling load_fmu with log_level=4 ...")
+        try:
+            model = load_fmu(str(ready_fmu), log_level=4)
+        except Exception as exc:
+            logger.error("load_fmu failed: %s", exc, exc_info=True)
+            raise RuntimeError(f"load_fmu failed: {exc}") from exc
+        logger.info("FMU loaded successfully: %s", model)
 
         # Build a constant input trajectory (two time points, same values)
         input_arg = None
@@ -318,16 +336,23 @@ def _run_fmu_test_sync(
             val_cols = [np.array([inputs[n], inputs[n]]) for n in input_names]
             val_matrix = np.column_stack([t_col] + val_cols)
             input_arg = (input_names, val_matrix)
+            logger.info("Input trajectory built for variables: %s", input_names)
 
         opts = model.simulate_options()
         opts["ncp"] = ncp
+        logger.info("Starting simulation: start=%s, end=%s, ncp=%s", start_time, end_time, ncp)
 
-        sim_result = model.simulate(
-            start_time=start_time,
-            final_time=end_time,
-            input=input_arg,
-            options=opts,
-        )
+        try:
+            sim_result = model.simulate(
+                start_time=start_time,
+                final_time=end_time,
+                input=input_arg,
+                options=opts,
+            )
+        except Exception as exc:
+            logger.error("model.simulate failed: %s", exc, exc_info=True)
+            raise RuntimeError(f"model.simulate failed: {exc}") from exc
+        logger.info("Simulation completed. Time points: %d", len(sim_result["time"]))
 
         time_data = [float(t) for t in sim_result["time"]]
         outputs_data: dict[str, list[float]] = {}
@@ -335,7 +360,7 @@ def _run_fmu_test_sync(
             try:
                 outputs_data[var] = [float(v) for v in sim_result[var]]
             except Exception:
-                pass
+                logger.warning("Could not extract output variable: %s", var)
 
         return {"time": time_data, "outputs": outputs_data}
 
