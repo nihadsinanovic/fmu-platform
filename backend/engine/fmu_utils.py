@@ -18,6 +18,29 @@ from xml.etree import ElementTree as ET
 logger = logging.getLogger(__name__)
 
 
+def _any_element_has_needs_execution_tool(root: ET.Element) -> bool:
+    """Check if needsExecutionTool='true' exists on root or any child element."""
+    for elem in [root] + list(root):
+        val = elem.get("needsExecutionTool", "").lower()
+        if val == "true":
+            return True
+    return False
+
+
+def _clear_needs_execution_tool(root: ET.Element) -> bool:
+    """Set needsExecutionTool='false' on root and all child elements that have it.
+
+    Returns True if any element was modified.
+    """
+    modified = False
+    for elem in [root] + list(root):
+        val = elem.get("needsExecutionTool", "").lower()
+        if val == "true":
+            elem.set("needsExecutionTool", "false")
+            modified = True
+    return modified
+
+
 @dataclass
 class FMUInspection:
     """Result of inspecting an FMU file."""
@@ -72,9 +95,9 @@ def inspect_fmu(fmu_path: Path) -> FMUInspection:
         result.fmi_version = root.get("fmiVersion", "")
         result.guid = root.get("guid", "")
         result.generation_tool = root.get("generationTool", "")
-        result.needs_execution_tool = (
-            root.get("needsExecutionTool", "false").lower() == "true"
-        )
+        # Check needsExecutionTool on root AND child elements (ModelExchange, CoSimulation)
+        # AMESim may place this attribute on any of these elements
+        result.needs_execution_tool = _any_element_has_needs_execution_tool(root)
 
         # Determine FMI type
         has_me = root.find("ModelExchange") is not None
@@ -137,16 +160,13 @@ def patch_fmu(
 
         patched = False
 
-        # Fix needsExecutionTool
+        # Fix needsExecutionTool on root AND child elements (ModelExchange, CoSimulation)
         if fix_needs_execution_tool:
             md_path = os.path.join(tmp_dir, "modelDescription.xml")
             if os.path.exists(md_path):
                 tree = ET.parse(md_path)
-                root = tree.getroot()
-                current = root.get("needsExecutionTool", "false")
-                if current.lower() == "true":
-                    root.set("needsExecutionTool", "false")
-                    ET.indent(tree, space="  ")
+                xml_root = tree.getroot()
+                if _clear_needs_execution_tool(xml_root):
                     tree.write(md_path, encoding="unicode", xml_declaration=True)
                     patched = True
                     logger.info("Patched needsExecutionTool=true → false in %s", fmu_path.name)
