@@ -51,6 +51,16 @@ export async function uploadResource(typeName: string, file: File): Promise<{ me
   })
 }
 
+export async function listResources(typeName: string): Promise<{ type_name: string; resources: { name: string; size_bytes: number }[] }> {
+  return request(`/api/fmu-library/${encodeURIComponent(typeName)}/resources`)
+}
+
+export async function deleteResource(typeName: string, filename: string): Promise<{ message: string }> {
+  return request(`/api/fmu-library/${encodeURIComponent(typeName)}/resources/${encodeURIComponent(filename)}`, {
+    method: 'DELETE',
+  })
+}
+
 // ── Admin Jobs ────────────────────────────────────────────────────────────────
 
 export async function listAllJobs(): Promise<Job[]> {

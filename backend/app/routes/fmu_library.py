@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database import get_db
 from app.models.fmu_library import FMULibrary
-from engine.fmu_utils import inspect_fmu, patch_fmu
+from engine.fmu_utils import inspect_fmu
 
 router = APIRouter(prefix="/api/fmu-library", tags=["fmu-library"])
 
@@ -158,17 +158,14 @@ async def upload_fmu(
                 "Re-export from AMESim with linux64 target platform."
             )
 
-        # Patch if needed (needsExecutionTool, etc.)
-        was_patched = inspection.needs_execution_tool
+        # Store FMU as-is (no modifications). Patching happens at runtime.
         dest_dir = settings.FMU_LIBRARY_PATH / type_name
         dest_dir.mkdir(parents=True, exist_ok=True)
         dest_path = dest_dir / file.filename
+        shutil.copy2(str(temp_path), str(dest_path))
 
-        if was_patched:
-            patch_fmu(temp_path, dest_path, fix_needs_execution_tool=True)
-            warnings.append("Patched needsExecutionTool='true' → 'false' for PyFMI compatibility")
-        else:
-            shutil.copy2(str(temp_path), str(dest_path))
+        if inspection.needs_execution_tool:
+            warnings.append("FMU has needsExecutionTool='true' — will be patched automatically at runtime")
 
         # Build manifest from inspection
         manifest = {
@@ -227,13 +224,13 @@ async def upload_resource(
     file: UploadFile,
     db: AsyncSession = Depends(get_db),
 ):
-    """Upload a resource/data file for an existing FMU.
+    """Upload a data file for an existing FMU.
 
     AMESim FMUs sometimes require external data files (e.g., weather data,
-    lookup tables) that weren't bundled during export. This endpoint lets
-    you inject them into the FMU's resources/ directory.
+    lookup tables) that weren't bundled during export. Files are stored
+    alongside the FMU and copied into the working directory at simulation time.
+    The original FMU is never modified.
     """
-    # Find the FMU
     result = await db.execute(
         select(FMULibrary).where(FMULibrary.type_name == type_name)
     )
@@ -244,35 +241,66 @@ async def upload_resource(
     if not file.filename:
         raise HTTPException(status_code=400, detail="File must have a name")
 
-    fmu_path = Path(fmu_record.fmu_path)
-    if not fmu_path.exists():
-        raise HTTPException(status_code=404, detail="FMU file not found on disk")
+    # Store data file in a 'data/' directory next to the FMU
+    fmu_dir = Path(fmu_record.fmu_path).parent
+    data_dir = fmu_dir / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    dest = data_dir / file.filename
 
-    # Save resource to temp, then inject into FMU
-    temp_dir = settings.TEMP_PATH / "uploads"
-    temp_dir.mkdir(parents=True, exist_ok=True)
-    temp_resource = temp_dir / file.filename
+    with open(dest, "wb") as f:
+        shutil.copyfileobj(file.file, f)
 
-    try:
-        with open(temp_resource, "wb") as f:
-            shutil.copyfileobj(file.file, f)
+    return {
+        "message": f"Data file '{file.filename}' stored for {type_name}",
+        "type_name": type_name,
+        "resource": file.filename,
+    }
 
-        patch_fmu(
-            fmu_path,
-            fmu_path,  # overwrite in-place
-            fix_needs_execution_tool=False,
-            inject_resources={file.filename: temp_resource},
-        )
 
-        return {
-            "message": f"Resource '{file.filename}' injected into {type_name}",
-            "type_name": type_name,
-            "resource": file.filename,
-        }
+@router.get("/{type_name}/resources")
+async def list_resources(
+    type_name: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """List data files stored for an FMU."""
+    result = await db.execute(
+        select(FMULibrary).where(FMULibrary.type_name == type_name)
+    )
+    fmu_record = result.scalar_one_or_none()
+    if not fmu_record:
+        raise HTTPException(status_code=404, detail=f"FMU type '{type_name}' not found")
 
-    finally:
-        if temp_resource.exists():
-            temp_resource.unlink()
+    fmu_dir = Path(fmu_record.fmu_path).parent
+    data_dir = fmu_dir / "data"
+    files: list[dict] = []
+    if data_dir.exists():
+        for f in sorted(data_dir.iterdir()):
+            if f.is_file():
+                files.append({"name": f.name, "size_bytes": f.stat().st_size})
+    return {"type_name": type_name, "resources": files}
+
+
+@router.delete("/{type_name}/resources/{filename}")
+async def delete_resource(
+    type_name: str,
+    filename: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a data file for an FMU."""
+    result = await db.execute(
+        select(FMULibrary).where(FMULibrary.type_name == type_name)
+    )
+    fmu_record = result.scalar_one_or_none()
+    if not fmu_record:
+        raise HTTPException(status_code=404, detail=f"FMU type '{type_name}' not found")
+
+    fmu_dir = Path(fmu_record.fmu_path).parent
+    file_path = fmu_dir / "data" / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail=f"Data file '{filename}' not found")
+
+    file_path.unlink()
+    return {"message": f"Deleted '{filename}'"}
 
 
 # ── FMU Test Run ───────────────────────────────────────────────────────
@@ -317,9 +345,25 @@ def _run_fmu_test_sync(
         ready_fmu = prepare_fmu_for_simulation(fmu_path, work_path)
         logger.info("FMU ready at: %s", ready_fmu)
 
+        # Copy data files into working directory so the FMU binary can find them
+        data_dir = fmu_path.parent / "data"
+        if data_dir.exists():
+            for data_file in data_dir.iterdir():
+                if data_file.is_file():
+                    dest = work_path / data_file.name
+                    shutil.copy2(str(data_file), str(dest))
+                    logger.info("Copied data file to work dir: %s", data_file.name)
+
+        # Change to work dir so the FMU binary can find data files by relative path
+        original_cwd = os.getcwd()
+        os.chdir(work_path)
+        logger.info("Changed working directory to: %s", work_path)
+        logger.info("Work dir contents: %s", [f.name for f in work_path.iterdir()])
+
         try:
             model = load_fmu(str(ready_fmu), log_level=4)
         except Exception as exc:
+            os.chdir(original_cwd)
             logger.error("load_fmu failed: %s", exc, exc_info=True)
             raise RuntimeError(f"load_fmu failed: {exc}") from exc
         logger.info("FMU loaded successfully")
@@ -356,6 +400,8 @@ def _run_fmu_test_sync(
             raise RuntimeError(
                 f"model.simulate failed: {sim_exc}\n\nFMU log:\n{fmu_log}"
             ) from sim_exc
+        finally:
+            os.chdir(original_cwd)
 
         time_data = [float(t) for t in sim_result["time"]]
         outputs_data: dict[str, list[float]] = {}
