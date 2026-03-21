@@ -9,7 +9,9 @@
 services:
   # ── Staging API ────────────────────────────────────────────────────────
   api-staging:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     restart: unless-stopped
     env_file: .env.staging
     expose:
@@ -35,7 +37,9 @@ services:
 
   # ── Staging Celery Worker ──────────────────────────────────────────────
   celery-worker-staging:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     restart: unless-stopped
     env_file: .env.staging
     entrypoint: []

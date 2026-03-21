@@ -13,6 +13,10 @@
 		reverse_proxy api:8000
 	}
 
+	handle /admin* {
+		reverse_proxy api:8000
+	}
+
 	handle /docs* {
 		reverse_proxy api:8000
 	}
@@ -26,7 +30,7 @@
 	}
 
 	handle {
-		respond "FMU Platform API (production). See /docs" 200
+		respond "FMU Platform API (production). See /docs or /admin" 200
 	}
 
 	request_body {
@@ -40,6 +44,10 @@
 		reverse_proxy api-staging:8000
 	}
 
+	handle /admin* {
+		reverse_proxy api-staging:8000
+	}
+
 	handle /docs* {
 		reverse_proxy api-staging:8000
 	}
@@ -53,7 +61,7 @@
 	}
 
 	handle {
-		respond "FMU Platform API (staging). See /docs" 200
+		respond "FMU Platform API (staging). See /docs or /admin" 200
 	}
 
 	request_body {

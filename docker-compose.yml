@@ -18,7 +18,9 @@ services:
 
   # ── FastAPI Backend ──────────────────────────────────────────────────
   api:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     restart: unless-stopped
     env_file: .env
     expose:
@@ -41,7 +43,9 @@ services:
 
   # ── Celery Worker (1 worker per AMESim license) ──────────────────────
   celery-worker:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     restart: unless-stopped
     env_file: .env
     entrypoint: []
