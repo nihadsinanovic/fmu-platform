@@ -141,15 +141,13 @@ def patch_fmu(
         if fix_needs_execution_tool:
             md_path = os.path.join(tmp_dir, "modelDescription.xml")
             if os.path.exists(md_path):
-                with open(md_path, "r") as f:
-                    content = f.read()
-                if 'needsExecutionTool="true"' in content:
-                    content = content.replace(
-                        'needsExecutionTool="true"',
-                        'needsExecutionTool="false"',
-                    )
-                    with open(md_path, "w") as f:
-                        f.write(content)
+                tree = ET.parse(md_path)
+                root = tree.getroot()
+                current = root.get("needsExecutionTool", "false")
+                if current.lower() == "true":
+                    root.set("needsExecutionTool", "false")
+                    ET.indent(tree, space="  ")
+                    tree.write(md_path, encoding="unicode", xml_declaration=True)
                     patched = True
                     logger.info("Patched needsExecutionTool=true → false in %s", fmu_path.name)
 
@@ -204,13 +202,15 @@ def prepare_fmu_for_simulation(fmu_path: Path, work_dir: Path) -> Path:
 
     needs_patch = inspection.needs_execution_tool
 
-    if not needs_patch:
-        return fmu_path
+    # Always copy to work_dir to avoid issues with spaces or special chars in the original path
+    dest_path = work_dir / fmu_path.name
 
-    # Patch to a new file in the work directory
-    patched_path = work_dir / fmu_path.name
+    if not needs_patch:
+        shutil.copy2(str(fmu_path), str(dest_path))
+        return dest_path
+
     return patch_fmu(
         fmu_path,
-        patched_path,
-        fix_needs_execution_tool=inspection.needs_execution_tool,
+        dest_path,
+        fix_needs_execution_tool=True,
     )
