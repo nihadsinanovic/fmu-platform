@@ -106,6 +106,29 @@ async def register_fmu(body: FMURegister, db: AsyncSession = Depends(get_db)):
     return fmu
 
 
+@router.delete("/{type_name}")
+async def delete_fmu(type_name: str, db: AsyncSession = Depends(get_db)):
+    """Delete an FMU and all its data files from the library."""
+    result = await db.execute(
+        select(FMULibrary).where(FMULibrary.type_name == type_name)
+    )
+    fmu_record = result.scalar_one_or_none()
+    if not fmu_record:
+        raise HTTPException(status_code=404, detail=f"FMU type '{type_name}' not found")
+
+    # Delete files from disk (FMU + data dir)
+    fmu_path = Path(fmu_record.fmu_path)
+    fmu_dir = fmu_path.parent
+    if fmu_dir.exists():
+        shutil.rmtree(str(fmu_dir), ignore_errors=True)
+
+    # Delete from database
+    await db.delete(fmu_record)
+    await db.flush()
+
+    return {"message": f"Deleted FMU '{type_name}'"}
+
+
 @router.post("/upload", response_model=FMUUploadResponse, status_code=status.HTTP_201_CREATED)
 async def upload_fmu(
     file: UploadFile,

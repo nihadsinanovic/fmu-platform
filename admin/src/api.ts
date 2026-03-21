@@ -21,6 +21,12 @@ export async function getFMUManifest(typeName: string): Promise<FMUDetail['manif
   return request(`/api/fmu-library/${typeName}/manifest`)
 }
 
+export async function deleteFMU(typeName: string): Promise<{ message: string }> {
+  return request(`/api/fmu-library/${encodeURIComponent(typeName)}`, {
+    method: 'DELETE',
+  })
+}
+
 export async function uploadFMU(
   file: File,
   typeName: string,
