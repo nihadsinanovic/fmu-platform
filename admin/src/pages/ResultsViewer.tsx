@@ -198,7 +198,7 @@ function SummaryCards({ data }: { data: ResultsData }) {
   const nonTimeVars = data.variables.filter((v) => v !== 'time')
 
   return (
-    <div className="grid grid-cols-3 gap-4 mb-6">
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4 mb-6">
       {[
         { label: 'Simulation Duration', value: `${durationH} h` },
         { label: 'Time Steps', value: steps.toLocaleString() },
@@ -276,7 +276,7 @@ export default function ResultsViewer() {
   const nonTimeVars = resultsData?.variables.filter((v) => v !== 'time') ?? []
 
   return (
-    <div className="p-8 h-full flex flex-col">
+    <div className="p-4 sm:p-6 md:p-8 h-full flex flex-col">
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white">Results Viewer</h1>
@@ -320,9 +320,9 @@ export default function ResultsViewer() {
         <>
           <SummaryCards data={resultsData} />
 
-          <div className="flex gap-6 flex-1 min-h-0">
+          <div className="flex flex-col md:flex-row gap-4 md:gap-6 flex-1 min-h-0">
             {/* Variable selector */}
-            <div className="w-56 flex-shrink-0 bg-gray-900 border border-gray-800 rounded-xl p-4 overflow-hidden flex flex-col">
+            <div className="md:w-56 md:flex-shrink-0 bg-gray-900 border border-gray-800 rounded-xl p-4 overflow-hidden flex flex-col md:h-full h-48">
               <VariableSelector
                 variables={resultsData.variables}
                 selected={selectedVars}

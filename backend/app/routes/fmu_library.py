@@ -1,4 +1,6 @@
+import asyncio
 import shutil
+import tempfile
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
@@ -50,6 +52,18 @@ class FMUUploadResponse(BaseModel):
     outputs: list[str]
     patched: bool
     warnings: list[str]
+
+
+class FMUTestRunRequest(BaseModel):
+    inputs: dict[str, float] = {}
+    start_time: float = 0.0
+    end_time: float = 10.0
+    ncp: int = 100
+
+
+class FMUTestRunResult(BaseModel):
+    time: list[float]
+    outputs: dict[str, list[float]]
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────
@@ -259,3 +273,110 @@ async def upload_resource(
     finally:
         if temp_resource.exists():
             temp_resource.unlink()
+
+
+# ── FMU Test Run ───────────────────────────────────────────────────────
+
+
+def _run_fmu_test_sync(
+    fmu_path: Path,
+    inputs: dict[str, float],
+    output_names: list[str],
+    start_time: float,
+    end_time: float,
+    ncp: int,
+) -> dict:
+    """Run a single-FMU test simulation synchronously. Called from a thread pool."""
+    import os
+
+    import numpy as np
+
+    # Set AMESim license env vars so the FMU shared library can acquire a license
+    if settings.AMESIM_LICENSE_SERVER:
+        os.environ["SALT_LICENSE_SERVER"] = settings.AMESIM_LICENSE_SERVER
+        os.environ["LMS_LICENSE"] = settings.AMESIM_LICENSE_SERVER
+        os.environ["SIEMENS_LICENSE_FILE"] = settings.AMESIM_LICENSE_SERVER
+
+    try:
+        from pyfmi import load_fmu  # type: ignore[import]
+    except ImportError as exc:
+        raise RuntimeError("PyFMI is not installed on this server") from exc
+
+    with tempfile.TemporaryDirectory(prefix="fmu_test_") as work_dir:
+        work_path = Path(work_dir)
+        from engine.fmu_utils import prepare_fmu_for_simulation
+
+        ready_fmu = prepare_fmu_for_simulation(fmu_path, work_path)
+
+        model = load_fmu(str(ready_fmu), log_level=0)
+
+        # Build a constant input trajectory (two time points, same values)
+        input_arg = None
+        if inputs:
+            input_names = list(inputs.keys())
+            t_col = np.array([start_time, end_time])
+            val_cols = [np.array([inputs[n], inputs[n]]) for n in input_names]
+            val_matrix = np.column_stack([t_col] + val_cols)
+            input_arg = (input_names, val_matrix)
+
+        opts = model.simulate_options()
+        opts["ncp"] = ncp
+
+        sim_result = model.simulate(
+            start_time=start_time,
+            final_time=end_time,
+            input=input_arg,
+            options=opts,
+        )
+
+        time_data = [float(t) for t in sim_result["time"]]
+        outputs_data: dict[str, list[float]] = {}
+        for var in output_names:
+            try:
+                outputs_data[var] = [float(v) for v in sim_result[var]]
+            except Exception:
+                pass
+
+        return {"time": time_data, "outputs": outputs_data}
+
+
+@router.post("/{type_name}/test-run", response_model=FMUTestRunResult)
+async def test_run_fmu(
+    type_name: str,
+    body: FMUTestRunRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Run a quick single-FMU test simulation with constant inputs.
+
+    Loads the FMU with PyFMI, applies constant input values, simulates, and
+    returns the time vector and all output variable trajectories.
+    """
+    result = await db.execute(
+        select(FMULibrary).where(FMULibrary.type_name == type_name)
+    )
+    fmu_record = result.scalar_one_or_none()
+    if not fmu_record:
+        raise HTTPException(status_code=404, detail=f"FMU type '{type_name}' not found")
+
+    fmu_path = Path(fmu_record.fmu_path)
+    if not fmu_path.exists():
+        raise HTTPException(status_code=404, detail="FMU file not found on disk")
+
+    output_names = [p["name"] for p in fmu_record.manifest.get("outputs", [])]
+
+    loop = asyncio.get_event_loop()
+    try:
+        result_data = await loop.run_in_executor(
+            None,
+            _run_fmu_test_sync,
+            fmu_path,
+            dict(body.inputs),
+            output_names,
+            body.start_time,
+            body.end_time,
+            body.ncp,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    return FMUTestRunResult(**result_data)

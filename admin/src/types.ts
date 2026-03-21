@@ -65,3 +65,15 @@ export interface ResultsData {
   variables: string[]
   data: Record<string, number[]>
 }
+
+export interface FMUTestRunRequest {
+  inputs: Record<string, number>
+  start_time: number
+  end_time: number
+  ncp: number
+}
+
+export interface FMUTestRunResult {
+  time: number[]
+  outputs: Record<string, number[]>
+}

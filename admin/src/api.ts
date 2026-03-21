@@ -1,4 +1,4 @@
-import type { FMUListItem, FMUDetail, FMUUploadResponse, Job, JobStatusDetail, ResultsData } from './types'
+import type { FMUListItem, FMUDetail, FMUUploadResponse, FMUTestRunRequest, FMUTestRunResult, Job, JobStatusDetail, ResultsData } from './types'
 
 const BASE = ''
 
@@ -31,6 +31,14 @@ export async function uploadFMU(
   return request(`/api/fmu-library/upload?type_name=${encodeURIComponent(typeName)}&version=${encodeURIComponent(version)}`, {
     method: 'POST',
     body: form,
+  })
+}
+
+export async function runFMUTest(typeName: string, body: FMUTestRunRequest): Promise<FMUTestRunResult> {
+  return request(`/api/fmu-library/${encodeURIComponent(typeName)}/test-run`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
   })
 }
 

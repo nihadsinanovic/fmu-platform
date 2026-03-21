@@ -151,10 +151,10 @@ function StatsBar({ jobs }: { jobs: Job[] }) {
   ]
 
   return (
-    <div className="grid grid-cols-4 gap-4 mb-8">
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4 mb-6 md:mb-8">
       {stats.map(({ label, value, color }) => (
-        <div key={label} className="bg-gray-900 border border-gray-800 rounded-xl px-5 py-4">
-          <p className={`text-2xl font-bold ${color}`}>{value}</p>
+        <div key={label} className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 md:px-5 md:py-4">
+          <p className={`text-xl md:text-2xl font-bold ${color}`}>{value}</p>
           <p className="text-xs text-gray-500 mt-1">{label}</p>
         </div>
       ))}
@@ -209,7 +209,7 @@ export default function SimulationJobs() {
   const filtered = filter === 'all' ? jobs : jobs.filter((j) => j.status === filter)
 
   return (
-    <div className="p-8">
+    <div className="p-4 sm:p-6 md:p-8">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -289,6 +289,7 @@ export default function SimulationJobs() {
       {/* Table */}
       {!loading && filtered.length > 0 && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-800">
@@ -309,6 +310,7 @@ export default function SimulationJobs() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { listFMUs, getFMUManifest, uploadFMU, uploadResource } from '../api'
 import type { FMUListItem, FMUManifest, FMUUploadResponse } from '../types'
 
@@ -315,6 +316,7 @@ function ManifestDrawer({ typeName, onClose }: { typeName: string; onClose: () =
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function FMULibrary() {
+  const navigate = useNavigate()
   const [fmus, setFmus] = useState<FMUListItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -345,9 +347,9 @@ export default function FMULibrary() {
   }
 
   return (
-    <div className="p-8">
+    <div className="p-4 sm:p-6 md:p-8">
       {/* Page header */}
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-between mb-6 md:mb-8">
         <div>
           <h1 className="text-2xl font-bold text-white">FMU Library</h1>
           <p className="text-sm text-gray-500 mt-1">Atomic FMU components available for composition</p>
@@ -396,38 +398,44 @@ export default function FMULibrary() {
       {/* FMU table */}
       {!loading && fmus.length > 0 && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-800">
-                <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Type Name</th>
-                <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Version</th>
-                <th className="text-right px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-800">
-              {fmus.map((fmu) => (
-                <tr key={fmu.type_name} className="hover:bg-gray-800/50 transition-colors group">
-                  <td className="px-5 py-4">
-                    <span className="font-mono text-indigo-400 text-sm">{fmu.type_name}</span>
-                  </td>
-                  <td className="px-5 py-4">
-                    <Badge color="gray">v{fmu.version}</Badge>
-                  </td>
-                  <td className="px-5 py-4 text-right">
-                    <button
-                      onClick={() => setSelectedFMU(fmu.type_name)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m5.231 13.481L15 17.25m-4.5-15H5.625c-.621 0-1.125.504-1.125 1.125v16.5c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9zm3.75 11.625a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
-                      </svg>
-                      Inspect / Resources
-                    </button>
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-800">
+                  <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Type Name</th>
+                  <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Version</th>
+                  <th className="text-right px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-gray-800">
+                {fmus.map((fmu) => (
+                  <tr
+                    key={fmu.type_name}
+                    onClick={() => navigate(`/fmu-library/${fmu.type_name}`)}
+                    className="hover:bg-gray-800/50 transition-colors group cursor-pointer"
+                  >
+                    <td className="px-5 py-4">
+                      <span className="font-mono text-indigo-400 text-sm">{fmu.type_name}</span>
+                    </td>
+                    <td className="px-5 py-4">
+                      <Badge color="gray">v{fmu.version}</Badge>
+                    </td>
+                    <td className="px-5 py-4 text-right">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setSelectedFMU(fmu.type_name) }}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m5.231 13.481L15 17.25m-4.5-15H5.625c-.621 0-1.125.504-1.125 1.125v16.5c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9zm3.75 11.625a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+                        </svg>
+                        Resources
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
