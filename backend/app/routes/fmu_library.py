@@ -231,7 +231,7 @@ async def upload_fmu(
             generation_tool=inspection.generation_tool,
             inputs=inspection.inputs,
             outputs=inspection.outputs,
-            patched=was_patched,
+            patched=False,
             warnings=warnings,
         )
 
