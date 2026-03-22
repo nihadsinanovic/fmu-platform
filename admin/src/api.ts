@@ -67,17 +67,6 @@ export async function deleteResource(typeName: string, filename: string): Promis
   })
 }
 
-export async function generateWeatherData(
-  typeName: string,
-  body: { filename?: string; days?: number; step_seconds?: number; latitude?: number; t_min?: number; t_max?: number },
-): Promise<{ message: string; resource: string; size_bytes: number }> {
-  return request(`/api/fmu-library/${encodeURIComponent(typeName)}/generate-weather-data`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-}
-
 // ── Admin Jobs ────────────────────────────────────────────────────────────────
 
 export async function listAllJobs(): Promise<Job[]> {

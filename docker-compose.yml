@@ -59,9 +59,6 @@ services:
       SALT_LICENSE_SERVER: ${AMESIM_LICENSE_SERVER:-}
       LMS_LICENSE: ${AMESIM_LICENSE_SERVER:-}
       SIEMENS_LICENSE_FILE: ${AMESIM_LICENSE_SERVER:-}
-      # AMESim installation path (for unit/material files).
-      # Leave empty to use the auto-generated stub directory.
-      AME: ${AME:-}
     volumes:
       - fmu-library:/opt/fmu-platform/fmu-library
       - projects:/opt/fmu-platform/projects

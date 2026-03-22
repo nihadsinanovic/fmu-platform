@@ -54,15 +54,6 @@ class FMUUploadResponse(BaseModel):
     warnings: list[str]
 
 
-class GenerateWeatherDataRequest(BaseModel):
-    filename: str = "HeatingAmbientLoop_TwoBuldnings_.june.data"
-    days: int = 30
-    step_seconds: int = 3600
-    latitude: float = 45.78
-    t_min: float = 14.0
-    t_max: float = 26.0
-
-
 class FMUTestRunRequest(BaseModel):
     inputs: dict[str, float] = {}
     start_time: float = 0.0
@@ -334,46 +325,6 @@ async def delete_resource(
     file_path.unlink()
     return {"message": f"Deleted '{filename}'"}
 
-
-@router.post("/{type_name}/generate-weather-data")
-async def generate_weather_data_endpoint(
-    type_name: str,
-    body: GenerateWeatherDataRequest,
-    db: AsyncSession = Depends(get_db),
-):
-    """Generate a synthetic AMESim-format weather data file for an FMU.
-
-    Creates a .data file with the correct AMESim table format (row count header,
-    whitespace-separated columns) and stores it in the FMU's data directory.
-    """
-    result = await db.execute(
-        select(FMULibrary).where(FMULibrary.type_name == type_name)
-    )
-    fmu_record = result.scalar_one_or_none()
-    if not fmu_record:
-        raise HTTPException(status_code=404, detail=f"FMU type '{type_name}' not found")
-
-    from engine.weather_data import generate_weather_data
-
-    fmu_dir = Path(fmu_record.fmu_path).parent
-    data_dir = fmu_dir / "data"
-
-    dest = generate_weather_data(
-        filename=body.filename,
-        output_dir=data_dir,
-        days=body.days,
-        step_seconds=body.step_seconds,
-        latitude=body.latitude,
-        t_min=body.t_min,
-        t_max=body.t_max,
-    )
-
-    return {
-        "message": f"Generated weather data file '{body.filename}'",
-        "type_name": type_name,
-        "resource": body.filename,
-        "size_bytes": dest.stat().st_size,
-    }
 
 
 # ── FMU Test Run ───────────────────────────────────────────────────────
