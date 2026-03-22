@@ -77,3 +77,24 @@ export interface FMUTestRunResult {
   time: number[]
   outputs: Record<string, number[]>
 }
+
+export interface DataFileValidation {
+  format_valid: boolean
+  has_header: boolean
+  n_points: number
+  n_vars: number
+  n_columns: number
+  error: string | null
+}
+
+export interface DataFileEntry {
+  name: string
+  size_bytes: number
+  validation?: DataFileValidation
+}
+
+export interface RepairResourceResponse {
+  message: string
+  repaired: boolean
+  validation: DataFileValidation
+}

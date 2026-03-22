@@ -458,21 +458,20 @@ def prepare_fmu_for_simulation(fmu_path: Path, work_dir: Path) -> Path:
         logger.warning("FMU %s: %s", fmu_path.name, warning)
 
     # Collect data files to inject into resources/
-    # Also auto-repair .data files that are missing the AMESim table header
     data_dir = fmu_path.parent / "data"
     inject_resources: dict[str, Path] = {}
     if data_dir.exists():
         for f in data_dir.iterdir():
             if f.is_file():
-                # Auto-repair .data files missing the AMESim header
+                # Validate .data files and warn if issues are detected
                 if f.suffix == ".data":
-                    validation = repair_amesim_data_file(f)
-                    if validation.repaired:
-                        logger.info(
-                            "Auto-repaired data file %s: added header (%d points, %d vars)",
+                    validation = validate_amesim_data_file(f)
+                    if not validation.has_header:
+                        logger.warning(
+                            "Data file %s is missing the AMESim table header "
+                            "(npoints\\tnvars). The FMU will likely fail with "
+                            "'Undetermined format'. Use the admin panel to repair it.",
                             f.name,
-                            validation.n_points,
-                            validation.n_vars,
                         )
                     if validation.error:
                         logger.warning("Data file %s has issues: %s", f.name, validation.error)
