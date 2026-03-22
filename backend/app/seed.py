@@ -30,7 +30,7 @@ async def seed() -> None:
                 log.info("User '%s' already exists — skipping seed.", SEED_USERNAME)
                 return
 
-            user = User(username=SEED_USERNAME, hashed_password=hash_password(SEED_PASSWORD))
+            user = User(username=SEED_USERNAME, hashed_password=hash_password(SEED_PASSWORD), is_admin=True)
             session.add(user)
             await session.commit()
             log.info("Seeded user '%s'.", SEED_USERNAME)

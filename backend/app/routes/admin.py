@@ -11,9 +11,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import require_admin
+from app.core.security import hash_password
 from app.database import get_db
 from app.models.job import SimulationJob
 from app.models.project import Project
+from app.models.user import User
+from app.schemas.auth import CreateUserRequest, UpdateUserRequest, UserResponse
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -89,3 +93,72 @@ async def get_result_data(job_id: uuid.UUID, db: AsyncSession = Depends(get_db))
         raise HTTPException(status_code=500, detail="pyarrow is not installed") from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to read result file: {exc}") from exc
+
+
+# ── User Management (admin-only) ─────────────────────────────────────────────
+
+
+@router.get("/users", response_model=list[UserResponse])
+async def list_users(
+    _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(User).order_by(User.created_at))
+    users = result.scalars().all()
+    return [UserResponse(id=str(u.id), username=u.username, is_admin=u.is_admin) for u in users]
+
+
+@router.post("/users", response_model=UserResponse, status_code=201)
+async def create_user(
+    body: CreateUserRequest,
+    _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    username = body.username.strip().lower()
+    if not username:
+        raise HTTPException(status_code=400, detail="Username cannot be empty")
+    existing = await db.execute(select(User).where(User.username == username))
+    if existing.scalar_one_or_none() is not None:
+        raise HTTPException(status_code=409, detail="Username already exists")
+    user = User(username=username, hashed_password=hash_password(body.password), is_admin=body.is_admin)
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    return UserResponse(id=str(user.id), username=user.username, is_admin=user.is_admin)
+
+
+@router.patch("/users/{user_id}", response_model=UserResponse)
+async def update_user(
+    user_id: uuid.UUID,
+    body: UpdateUserRequest,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    user = await db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if body.password is not None:
+        user.hashed_password = hash_password(body.password)
+    if body.is_admin is not None:
+        # Prevent admin from removing their own admin status
+        if user.id == admin.id and not body.is_admin:
+            raise HTTPException(status_code=400, detail="Cannot remove your own admin status")
+        user.is_admin = body.is_admin
+    await db.commit()
+    await db.refresh(user)
+    return UserResponse(id=str(user.id), username=user.username, is_admin=user.is_admin)
+
+
+@router.delete("/users/{user_id}", status_code=204)
+async def delete_user(
+    user_id: uuid.UUID,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    if user_id == admin.id:
+        raise HTTPException(status_code=400, detail="Cannot delete your own account")
+    user = await db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    await db.delete(user)
+    await db.commit()

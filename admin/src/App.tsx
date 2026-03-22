@@ -5,10 +5,11 @@ import FMULibrary from './pages/FMULibrary'
 import FMUDetail from './pages/FMUDetail'
 import SimulationJobs from './pages/SimulationJobs'
 import ResultsViewer from './pages/ResultsViewer'
+import Accounts from './pages/Accounts'
 import Login from './pages/Login'
 
 function ProtectedRoutes() {
-  const { token } = useAuth()
+  const { token, isAdmin } = useAuth()
   if (!token) return <Navigate to="/login" replace />
 
   return (
@@ -19,6 +20,7 @@ function ProtectedRoutes() {
         <Route path="fmu-library/:typeName" element={<FMUDetail />} />
         <Route path="jobs" element={<SimulationJobs />} />
         <Route path="results/:jobId?" element={<ResultsViewer />} />
+        {isAdmin && <Route path="accounts" element={<Accounts />} />}
         <Route path="*" element={<Navigate to="/fmu-library" replace />} />
       </Route>
     </Routes>

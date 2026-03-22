@@ -23,7 +23,12 @@ export default function Login() {
         throw new Error(data.detail || 'Login failed')
       }
       const data = await res.json()
-      login(data.access_token, username)
+      // Fetch user info to get is_admin flag
+      const meRes = await fetch('/api/auth/me', {
+        headers: { Authorization: `Bearer ${data.access_token}` },
+      })
+      const me = meRes.ok ? await meRes.json() : { is_admin: false }
+      login(data.access_token, username, me.is_admin)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed')
     } finally {
