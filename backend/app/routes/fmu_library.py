@@ -490,6 +490,37 @@ def _run_fmu_test_sync(
             raise RuntimeError(f"load_fmu failed: {exc}") from exc
         logger.info("FMU loaded successfully")
 
+        # Inspect extracted FMU resources directory for diagnostics
+        # Parse AMESim working directory from the FMU log
+        import re
+        amesim_res_dir = None
+        try:
+            fmu_init_log = "\n".join(model.get_log())
+            m = re.search(r"working directory set to (.+)", fmu_init_log)
+            if m:
+                amesim_res_dir = Path(m.group(1).strip())
+                logger.info("AMESim resources dir: %s", amesim_res_dir)
+                if amesim_res_dir.exists():
+                    res_files = list(amesim_res_dir.iterdir())
+                    logger.info(
+                        "Files in AMESim resources dir: %s",
+                        [(f.name, f.stat().st_size) for f in res_files],
+                    )
+                    # Log first bytes of .data files in the extracted dir
+                    for rf in res_files:
+                        if rf.suffix == ".data":
+                            head = rf.read_bytes()[:300]
+                            logger.info(
+                                "  %s first 300 bytes: %r", rf.name, head
+                            )
+                else:
+                    logger.warning(
+                        "AMESim resources dir does NOT exist: %s",
+                        amesim_res_dir,
+                    )
+        except Exception as log_exc:
+            logger.warning("Could not inspect FMU extraction: %s", log_exc)
+
         # Build a constant input trajectory (two time points, same values)
         input_arg = None
         if inputs:
@@ -532,9 +563,11 @@ def _run_fmu_test_sync(
                     f"FMU log:\n{fmu_log}"
                 ) from sim_exc
 
-            # Detect AMESim data file format errors
-            if "Undetermined format" in fmu_log or "File has no data" in fmu_log:
-                # List data files in work dir and FMU resources for diagnostics
+            # Detect AMESim data file format or file-not-found errors
+            if any(s in fmu_log for s in (
+                "Undetermined format", "File has no data", "Impossible to open"
+            )):
+                # List data files on disk (source)
                 data_files_info = []
                 data_dir = fmu_path.parent / "data"
                 if data_dir.exists():
@@ -552,18 +585,37 @@ def _run_fmu_test_sync(
                             )
                 files_detail = "\n".join(data_files_info) if data_files_info else "  (none)"
 
+                # Inspect AMESim's actual resources directory
+                amesim_detail = ""
+                m = re.search(r"working directory set to (.+)", fmu_log)
+                if m:
+                    res_path = Path(m.group(1).strip())
+                    if res_path.exists():
+                        res_listing = []
+                        for rf in sorted(res_path.iterdir()):
+                            if rf.is_file():
+                                info = f"    {rf.name} ({rf.stat().st_size} bytes)"
+                                if rf.suffix == ".data":
+                                    head = rf.read_bytes()[:200]
+                                    info += f"\n      first bytes: {head!r}"
+                                res_listing.append(info)
+                        amesim_detail = (
+                            f"\n\nAMESim resources dir ({res_path}):\n"
+                            + "\n".join(res_listing)
+                            if res_listing
+                            else f"\n\nAMESim resources dir ({res_path}): EMPTY"
+                        )
+                    else:
+                        amesim_detail = (
+                            f"\n\nAMESim resources dir ({res_path}): "
+                            f"DOES NOT EXIST"
+                        )
+
                 raise RuntimeError(
-                    f"AMESim data file format error. The FMU's table reader "
-                    f"could not parse a .data file.\n\n"
-                    f"This usually means the file is missing the required "
-                    f"AMESim table header. The first non-comment line must be:\n"
-                    f"  npoints\\tnvars\n"
-                    f"For example, for 8760 hourly points with 4 variables:\n"
-                    f"  8760\\t4\n\n"
-                    f"Check the Data Files section on the FMU details page — "
-                    f"if a file shows 'Needs repair', use the Repair button "
-                    f"to add the missing header.\n\n"
-                    f"Data files on disk:\n{files_detail}\n\n"
+                    f"AMESim data file error. The FMU could not read a "
+                    f"required .data file.\n\n"
+                    f"Data files on disk (source):\n{files_detail}"
+                    f"{amesim_detail}\n\n"
                     f"FMU log:\n{fmu_log}"
                 ) from sim_exc
 
