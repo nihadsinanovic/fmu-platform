@@ -26,7 +26,7 @@ services:
     expose:
       - "8000"
     volumes:
-      - fmu-library:/opt/fmu-platform/fmu-library
+      - ./fmu-library:/opt/fmu-platform/fmu-library
       - projects:/opt/fmu-platform/projects
       - temp:/opt/fmu-platform/temp
     environment:
@@ -66,7 +66,7 @@ services:
       LMS_LICENSE: ${AMESIM_LICENSE_SERVER:-}
       SIEMENS_LICENSE_FILE: ${AMESIM_LICENSE_SERVER:-}
     volumes:
-      - fmu-library:/opt/fmu-platform/fmu-library
+      - ./fmu-library:/opt/fmu-platform/fmu-library
       - projects:/opt/fmu-platform/projects
       - temp:/opt/fmu-platform/temp
     depends_on:
@@ -113,7 +113,6 @@ services:
 volumes:
   pgdata:
   redisdata:
-  fmu-library:
   projects:
   temp:
   caddy_data:
