@@ -135,6 +135,7 @@ def patch_fmu(
     *,
     fix_needs_execution_tool: bool = True,
     inject_resources: dict[str, Path] | None = None,
+    ensure_resources_dir: bool = False,
 ) -> Path:
     """Patch an FMU file to fix known compatibility issues.
 
@@ -145,6 +146,8 @@ def patch_fmu(
             that PyFMI refuses to load otherwise).
         inject_resources: Dict of {filename: local_path} to add to the FMU's
             resources/ directory.
+        ensure_resources_dir: If True, ensure the ``resources/`` directory
+            exists (even if empty) so PyFMI creates it during extraction.
 
     Returns:
         Path to the patched FMU file.
@@ -180,6 +183,14 @@ def patch_fmu(
                 shutil.copy2(str(src_path), dest)
                 logger.info("Injected resource %s into %s", filename, fmu_path.name)
                 patched = True
+
+        # Ensure resources/ directory exists (even if empty)
+        if ensure_resources_dir:
+            res_dir = os.path.join(tmp_dir, "resources")
+            if not os.path.isdir(res_dir):
+                os.makedirs(res_dir, exist_ok=True)
+                patched = True
+                logger.info("Created missing resources/ directory in %s", fmu_path.name)
 
         if not patched and output_path == fmu_path:
             # Nothing to do
@@ -262,37 +273,73 @@ def setup_amesim_environment(temp_path: Path, license_server: str = "") -> None:
 
 
 def prepare_fmu_for_simulation(fmu_path: Path, work_dir: Path) -> Path:
-    """Prepare an FMU for simulation — patch and copy to work directory.
+    """Prepare an FMU for simulation — patch, inject data files, and copy.
 
     This is the main entry point called by the simulation runner before
     loading an FMU. It:
     1. Inspects the FMU for compatibility issues
     2. Patches needsExecutionTool if needed
-    3. Returns the path to the (possibly patched) FMU
+    3. Injects external data files from the adjacent ``data/`` directory
+       into the FMU's ``resources/`` directory so the binary can find them
+       at runtime (AMESim FMUs look up data files via fmuResourceLocation)
+    4. Ensures the ``resources/`` directory entry exists in the ZIP
+    5. Returns the path to the simulation-ready FMU
 
     Args:
         fmu_path: Original FMU path.
         work_dir: Working directory for this simulation run.
 
     Returns:
-        Path to the simulation-ready FMU (may be the original if no patches needed).
+        Path to the simulation-ready FMU in work_dir.
     """
     inspection = inspect_fmu(fmu_path)
 
     for warning in inspection.warnings:
         logger.warning("FMU %s: %s", fmu_path.name, warning)
 
-    needs_patch = inspection.needs_execution_tool
+    # Collect data files to inject into resources/
+    data_dir = fmu_path.parent / "data"
+    inject_resources: dict[str, Path] = {}
+    if data_dir.exists():
+        for f in data_dir.iterdir():
+            if f.is_file():
+                inject_resources[f.name] = f
+                logger.info("Will inject data file into FMU resources: %s", f.name)
 
-    # Always copy to work_dir to avoid issues with spaces or special chars in the original path
+    needs_patch = inspection.needs_execution_tool or bool(inject_resources)
+
     dest_path = work_dir / fmu_path.name
 
     if not needs_patch:
-        shutil.copy2(str(fmu_path), str(dest_path))
+        # Still need to ensure resources/ directory exists in the FMU
+        _ensure_resources_dir(fmu_path, dest_path)
         return dest_path
 
     return patch_fmu(
         fmu_path,
         dest_path,
-        fix_needs_execution_tool=True,
+        fix_needs_execution_tool=inspection.needs_execution_tool,
+        inject_resources=inject_resources if inject_resources else None,
+        ensure_resources_dir=True,
     )
+
+
+def _ensure_resources_dir(src_fmu: Path, dest_fmu: Path) -> None:
+    """Copy an FMU, ensuring it has a resources/ directory entry.
+
+    Some FMU runtimes (PyFMI/JModelica) expect the resources/ directory to
+    exist after extraction.  If the ZIP doesn't contain one, add an empty
+    entry so the directory is created.
+    """
+    shutil.copy2(str(src_fmu), str(dest_fmu))
+
+    with zipfile.ZipFile(dest_fmu, "r") as zf:
+        has_resources = any(
+            n.startswith("resources/") for n in zf.namelist()
+        )
+
+    if not has_resources:
+        # Append a directory entry for resources/
+        with zipfile.ZipFile(dest_fmu, "a") as zf:
+            zf.writestr("resources/", "")
+        logger.info("Added missing resources/ directory to %s", dest_fmu.name)
