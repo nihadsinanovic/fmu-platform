@@ -286,11 +286,20 @@ class DataFileValidation:
     error: str = ""
 
 
+def _is_comment_line(line: str) -> bool:
+    """Check if a line is a comment in AMESim .data format.
+
+    AMESim supports both `;` and `'` (single quote) as comment prefixes.
+    """
+    stripped = line.strip()
+    return stripped.startswith(";") or stripped.startswith("'")
+
+
 def validate_amesim_data_file(file_path: Path) -> DataFileValidation:
     """Validate an AMESim .data file and check its format.
 
     AMESim table files have the format:
-        ; optional comment lines (start with ;)
+        ; optional comment lines (start with ; or ')
         npoints  nvars
         t1  v1  v2  ...
         t2  v1  v2  ...
@@ -313,11 +322,11 @@ def validate_amesim_data_file(file_path: Path) -> DataFileValidation:
         result.error = "File is empty"
         return result
 
-    # Skip comment lines (starting with ;)
+    # Skip comment lines (starting with ; or ')
     data_start = 0
     for i, line in enumerate(lines):
         stripped = line.strip()
-        if stripped and not stripped.startswith(";"):
+        if stripped and not _is_comment_line(line):
             data_start = i
             break
         result.n_comment_lines += 1
@@ -352,7 +361,7 @@ def validate_amesim_data_file(file_path: Path) -> DataFileValidation:
     col_count = 0
     for line in data_rows:
         stripped = line.strip()
-        if not stripped or stripped.startswith(";"):
+        if not stripped or _is_comment_line(line):
             continue
         actual_rows += 1
         cols = len(stripped.split())
@@ -374,6 +383,30 @@ def validate_amesim_data_file(file_path: Path) -> DataFileValidation:
 
     # Validate header matches data if header was present
     if result.has_header:
+        # Check for comment lines between header and first data row
+        # (this happens when a header was inserted before unrecognized comments)
+        has_interleaved_comments = False
+        if data_rows:
+            for line in data_rows:
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                if _is_comment_line(line):
+                    has_interleaved_comments = True
+                    break
+                # First non-empty, non-comment line is data — we're good
+                break
+
+        if has_interleaved_comments:
+            result.error = (
+                f"Comment lines appear after the header, before data rows. "
+                f"AMESim cannot parse this — the header must be immediately "
+                f"followed by data rows. Re-upload the original file and use "
+                f"the repair function to add the header in the correct position."
+            )
+            result.valid = False
+            return result
+
         if result.n_points != actual_rows:
             result.error = (
                 f"Header says {result.n_points} points but file has {actual_rows} data rows"
