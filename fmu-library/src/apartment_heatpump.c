@@ -238,3 +238,6 @@ FMI2_EXPORT fmi2Status fmi2CompletedIntegratorStep(fmi2Component c, fmi2Boolean 
 FMI2_EXPORT fmi2Status fmi2GetNominalsOfContinuousStates(fmi2Component c, fmi2Real xn[], size_t nx) {
     (void)c; for (size_t i = 0; i < nx; i++) xn[i] = 1.0; return fmi2OK;
 }
+
+/* Common FMI 2.0 function stubs (debug logging, state serialization, etc.) */
+#include "fmu_common_impl.h"

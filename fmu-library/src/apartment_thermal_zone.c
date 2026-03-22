@@ -324,3 +324,6 @@ FMI2_EXPORT fmi2Status fmi2GetNominalsOfContinuousStates(fmi2Component c, fmi2Re
     if (nx >= 1) xn[0] = 293.0;  /* nominal ~20°C */
     return fmi2OK;
 }
+
+/* Common FMI 2.0 function stubs (debug logging, state serialization, etc.) */
+#include "fmu_common_impl.h"
