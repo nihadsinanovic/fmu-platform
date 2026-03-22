@@ -289,13 +289,17 @@ class DataFileValidation:
 def _normalize_data_file_for_injection(src: Path, dest: Path) -> bool:
     """Normalize an AMESim .data file for Linux runtime compatibility.
 
-    Handles cross-platform issues that can cause AMESim's C binary to fail:
-    - Strips UTF-8 BOM (byte order mark)
-    - Converts Windows line endings (\\r\\n) to Unix (\\n)
-    - Strips trailing \\r from lines
+    AMESim's C-based table reader is strict. This function normalizes the
+    file to avoid common issues that cause "Undetermined format" errors:
 
-    This is NOT a format repair (adding headers) — it's basic encoding
-    normalization so the file is readable by AMESim on Linux.
+    1. Strips UTF-8 BOM (byte order mark)
+    2. Converts Windows line endings (\\r\\n) to Unix (\\n)
+    3. Removes blank/empty lines (AMESim treats them as data boundaries)
+    4. Sanitizes comment lines to ASCII (non-ASCII chars like °, — can
+       confuse the C parser)
+    5. Strips trailing whitespace from every line
+
+    The original file on disk is NOT modified — only the injected copy.
 
     Returns True if the file was modified, False if already clean.
     """
@@ -314,13 +318,57 @@ def _normalize_data_file_for_injection(src: Path, dest: Path) -> bool:
         modified = True
         logger.info("Normalized line endings in %s", src.name)
 
-    dest.write_bytes(raw)
+    # Process line-by-line: remove blanks, sanitize comments, strip trailing ws
+    text = raw.decode("utf-8", errors="replace")
+    lines = text.split("\n")
+    out_lines: list[str] = []
+    blanks_removed = 0
+    comments_sanitized = 0
+
+    for line in lines:
+        stripped = line.rstrip()
+
+        # Remove blank/empty lines — AMESim's parser can misinterpret them
+        if not stripped:
+            blanks_removed += 1
+            continue
+
+        # Sanitize comment lines: replace non-ASCII chars with '?'
+        # AMESim's C reader may choke on multi-byte UTF-8 in comments
+        if stripped.startswith(";") or stripped.startswith("'"):
+            ascii_line = stripped.encode("ascii", errors="replace").decode("ascii")
+            if ascii_line != stripped:
+                comments_sanitized += 1
+                stripped = ascii_line
+
+        out_lines.append(stripped)
+
+    if blanks_removed > 0:
+        modified = True
+        logger.info("Removed %d blank lines from %s", blanks_removed, src.name)
+
+    if comments_sanitized > 0:
+        modified = True
+        logger.info(
+            "Sanitized %d comment lines (non-ASCII → ASCII) in %s",
+            comments_sanitized,
+            src.name,
+        )
+
+    result_bytes = ("\n".join(out_lines) + "\n").encode("utf-8")
+
+    # Log first few lines of normalized output for diagnostics
+    for i, line in enumerate(out_lines[:5]):
+        logger.info("  %s normalized line %d: %r", src.name, i + 1, line[:120])
+
+    dest.write_bytes(result_bytes)
 
     if modified:
         logger.info(
-            "Normalized data file %s for injection (%d bytes)",
+            "Normalized data file %s for injection: %d → %d bytes",
             src.name,
             len(raw),
+            len(result_bytes),
         )
 
     return modified
