@@ -272,6 +272,166 @@ def setup_amesim_environment(temp_path: Path, license_server: str = "") -> None:
                 logger.info("Created UGS license file: %s", lic_file)
 
 
+@dataclass
+class DataFileValidation:
+    """Result of validating an AMESim .data file."""
+
+    valid: bool = False
+    has_header: bool = False
+    n_points: int = 0
+    n_vars: int = 0  # number of variables (excluding time column)
+    n_columns: int = 0  # total columns per data row (including time)
+    n_comment_lines: int = 0
+    repaired: bool = False
+    error: str = ""
+
+
+def validate_amesim_data_file(file_path: Path) -> DataFileValidation:
+    """Validate an AMESim .data file and check its format.
+
+    AMESim table files have the format:
+        ; optional comment lines (start with ;)
+        npoints  nvars
+        t1  v1  v2  ...
+        t2  v1  v2  ...
+
+    Where npoints is the number of data rows and nvars is the number of
+    value columns (excluding the time column).
+
+    Returns a DataFileValidation with details about the file.
+    """
+    result = DataFileValidation()
+
+    try:
+        text = file_path.read_text(encoding="utf-8", errors="replace")
+    except Exception as exc:
+        result.error = f"Cannot read file: {exc}"
+        return result
+
+    lines = text.splitlines()
+    if not lines:
+        result.error = "File is empty"
+        return result
+
+    # Skip comment lines (starting with ;)
+    data_start = 0
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped and not stripped.startswith(";"):
+            data_start = i
+            break
+        result.n_comment_lines += 1
+
+    remaining = lines[data_start:]
+    if not remaining:
+        result.error = "File contains only comments"
+        return result
+
+    # Check if the first non-comment line is a header (npoints nvars)
+    first_line = remaining[0].strip()
+    parts = first_line.split()
+
+    try:
+        maybe_npoints = int(parts[0])
+        maybe_nvars = int(parts[1]) if len(parts) >= 2 else 0
+        # Header line has integer values and typically 1-2 fields
+        if len(parts) <= 2 and maybe_npoints > 0:
+            result.has_header = True
+            result.n_points = maybe_npoints
+            result.n_vars = maybe_nvars
+            data_rows = remaining[1:]
+        else:
+            raise ValueError("not a header")
+    except (ValueError, IndexError):
+        # No header — treat all remaining lines as data
+        result.has_header = False
+        data_rows = remaining
+
+    # Count actual data rows and columns
+    actual_rows = 0
+    col_count = 0
+    for line in data_rows:
+        stripped = line.strip()
+        if not stripped or stripped.startswith(";"):
+            continue
+        actual_rows += 1
+        cols = len(stripped.split())
+        if col_count == 0:
+            col_count = cols
+        elif cols != col_count:
+            result.error = f"Inconsistent column count: expected {col_count}, got {cols}"
+            return result
+
+    result.n_columns = col_count
+
+    if actual_rows == 0:
+        result.error = "No data rows found"
+        return result
+
+    if not result.has_header:
+        result.n_points = actual_rows
+        result.n_vars = col_count - 1  # first column is time
+
+    # Validate header matches data if header was present
+    if result.has_header:
+        if result.n_points != actual_rows:
+            result.error = (
+                f"Header says {result.n_points} points but file has {actual_rows} data rows"
+            )
+            return result
+        expected_cols = result.n_vars + 1  # time + nvars
+        if col_count != expected_cols:
+            result.error = (
+                f"Header says {result.n_vars} vars (expecting {expected_cols} columns) "
+                f"but data has {col_count} columns"
+            )
+            return result
+
+    result.valid = True
+    return result
+
+
+def repair_amesim_data_file(file_path: Path) -> DataFileValidation:
+    """Validate and repair an AMESim .data file in-place.
+
+    If the file is missing the required npoints/nvars header line,
+    add it. This makes the file parseable by AMESim's table reader.
+
+    Returns the validation result (with repaired=True if the file was fixed).
+    """
+    validation = validate_amesim_data_file(file_path)
+
+    if not validation.valid:
+        return validation
+
+    if validation.has_header:
+        # Already has a proper header
+        return validation
+
+    # File is valid data but missing header — add it
+    text = file_path.read_text(encoding="utf-8", errors="replace")
+    lines = text.splitlines(keepends=True)
+
+    # Build header line: npoints nvars (nvars = total_columns - 1 for time)
+    header = f"{validation.n_points}\t{validation.n_vars}\n"
+
+    # Insert header after any comment lines
+    insert_pos = validation.n_comment_lines
+    lines.insert(insert_pos, header)
+
+    file_path.write_text("".join(lines), encoding="utf-8")
+
+    validation.has_header = True
+    validation.repaired = True
+    logger.info(
+        "Repaired AMESim data file %s: added header (%d points, %d vars)",
+        file_path.name,
+        validation.n_points,
+        validation.n_vars,
+    )
+    return validation
+
+
 def prepare_fmu_for_simulation(fmu_path: Path, work_dir: Path) -> Path:
     """Prepare an FMU for simulation — patch, inject data files, and copy.
 
@@ -303,8 +463,38 @@ def prepare_fmu_for_simulation(fmu_path: Path, work_dir: Path) -> Path:
     if data_dir.exists():
         for f in data_dir.iterdir():
             if f.is_file():
+                # Validate .data files and warn if issues are detected
+                if f.suffix == ".data":
+                    validation = validate_amesim_data_file(f)
+                    if not validation.has_header:
+                        logger.warning(
+                            "Data file %s is missing the AMESim table header "
+                            "(npoints\\tnvars). The FMU will likely fail with "
+                            "'Undetermined format'. Use the admin panel to repair it.",
+                            f.name,
+                        )
+                    if validation.error:
+                        logger.warning("Data file %s has issues: %s", f.name, validation.error)
+
                 inject_resources[f.name] = f
-                logger.info("Will inject data file into FMU resources: %s", f.name)
+                size = f.stat().st_size
+                logger.info(
+                    "Will inject data file into FMU resources: %s (%d bytes)",
+                    f.name,
+                    size,
+                )
+                # Log first lines of .data files for diagnostics
+                if f.suffix == ".data":
+                    try:
+                        first_lines = f.read_text(
+                            encoding="utf-8", errors="replace"
+                        ).splitlines()[:3]
+                        for i, line in enumerate(first_lines):
+                            logger.info("  %s line %d: %r", f.name, i + 1, line[:120])
+                    except Exception:
+                        pass
+    else:
+        logger.info("No data/ directory found next to FMU: %s", fmu_path)
 
     needs_patch = inspection.needs_execution_tool or bool(inject_resources)
 
