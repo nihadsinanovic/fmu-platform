@@ -105,3 +105,38 @@ export async function getJobStatus(jobId: string): Promise<JobStatusDetail> {
 export async function getResultData(jobId: string): Promise<ResultsData> {
   return request(`/api/admin/results/${jobId}`)
 }
+
+// ── User Management ──────────────────────────────────────────────────────────
+
+export interface UserInfo {
+  id: string
+  username: string
+  is_admin: boolean
+}
+
+export async function listUsers(): Promise<UserInfo[]> {
+  return request('/api/admin/users')
+}
+
+export async function createUser(username: string, password: string, isAdmin: boolean): Promise<UserInfo> {
+  return request('/api/admin/users', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password, is_admin: isAdmin }),
+  })
+}
+
+export async function updateUser(userId: string, data: { password?: string; is_admin?: boolean }): Promise<UserInfo> {
+  return request(`/api/admin/users/${userId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+}
+
+export async function deleteUser(userId: string): Promise<void> {
+  await fetch(`/api/admin/users/${userId}`, {
+    method: 'DELETE',
+    headers: { ...authHeaders() },
+  })
+}

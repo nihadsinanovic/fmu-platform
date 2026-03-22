@@ -3,10 +3,11 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 interface AuthState {
   token: string | null
   username: string | null
+  isAdmin: boolean
 }
 
 interface AuthContextValue extends AuthState {
-  login: (token: string, username: string) => void
+  login: (token: string, username: string, isAdmin: boolean) => void
   logout: () => void
 }
 
@@ -17,9 +18,12 @@ const STORAGE_KEY = 'fmu_auth'
 function loadAuth(): AuthState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) return JSON.parse(raw) as AuthState
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      return { token: parsed.token ?? null, username: parsed.username ?? null, isAdmin: parsed.isAdmin ?? false }
+    }
   } catch { /* ignore */ }
-  return { token: null, username: null }
+  return { token: null, username: null, isAdmin: false }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -33,8 +37,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [state])
 
-  const login = (token: string, username: string) => setState({ token, username })
-  const logout = () => setState({ token: null, username: null })
+  const login = (token: string, username: string, isAdmin: boolean) => setState({ token, username, isAdmin })
+  const logout = () => setState({ token: null, username: null, isAdmin: false })
 
   return (
     <AuthContext.Provider value={{ ...state, login, logout }}>
