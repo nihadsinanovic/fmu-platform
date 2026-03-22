@@ -276,7 +276,7 @@ export default function FMUDetail() {
               <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
                 Data Files ({dataFiles.length})
               </h2>
-              <div>
+              <div className="flex items-center gap-2">
                 <input
                   ref={fileInputRef}
                   type="file"

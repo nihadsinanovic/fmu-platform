@@ -326,6 +326,7 @@ async def delete_resource(
     return {"message": f"Deleted '{filename}'"}
 
 
+
 # ── FMU Test Run ───────────────────────────────────────────────────────
 
 
@@ -354,6 +355,23 @@ def _run_fmu_test_sync(
         logger.info("License server set to: %s", license_server)
     else:
         logger.warning("No license server configured — FMU may fail if it requires a license")
+
+    # Set $AME to a minimal stub directory if not already set.
+    # AMESim FMUs reference $AME/AME.units and $AME/libth/data/materials/*.data
+    # for unit conversion and material properties.  Without the full AMESim
+    # installation we provide a stub so the FMU doesn't abort on missing paths.
+    if not os.environ.get("AME"):
+        ame_stub = settings.TEMP_PATH / "ame_stub"
+        ame_stub.mkdir(parents=True, exist_ok=True)
+        # Create a minimal AME.units file (empty is fine — suppresses the error)
+        units_file = ame_stub / "AME.units"
+        if not units_file.exists():
+            units_file.write_text("; minimal AME.units stub\n", encoding="utf-8")
+        # Create libth/data/materials directory for material lookups
+        materials_dir = ame_stub / "libth" / "data" / "materials"
+        materials_dir.mkdir(parents=True, exist_ok=True)
+        os.environ["AME"] = str(ame_stub)
+        logger.info("Set $AME to stub directory: %s", ame_stub)
 
     try:
         from pyfmi import load_fmu  # type: ignore[import]
