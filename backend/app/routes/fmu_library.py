@@ -555,8 +555,9 @@ def _run_fmu_test_sync(
                     f"  npoints\\tnvars\n"
                     f"For example, for 8760 hourly points with 4 variables:\n"
                     f"  8760\\t4\n\n"
-                    f"Try re-uploading the data file — the server now auto-repairs "
-                    f"files that are missing this header.\n\n"
+                    f"Check the Data Files section on the FMU details page — "
+                    f"if a file shows 'Needs repair', use the Repair button "
+                    f"to add the missing header.\n\n"
                     f"Data files on disk:\n{files_detail}\n\n"
                     f"FMU log:\n{fmu_log}"
                 ) from sim_exc
