@@ -39,7 +39,7 @@
 }
 
 # ── Staging (only active when STAGING_DOMAIN is set) ─────────────────────
-{$STAGING_DOMAIN:} {
+{$STAGING_DOMAIN:localhost:19999} {
 	handle /api/* {
 		reverse_proxy api-staging:8000
 	}
