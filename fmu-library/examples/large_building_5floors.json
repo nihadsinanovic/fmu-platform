@@ -1,0 +1,202 @@
+{
+  "project_id": "example-large-building",
+  "building": {
+    "name": "Residence du Parc - Lyon",
+    "location": {
+      "lat": 45.76,
+      "lon": 4.84,
+      "climate_zone": "H1c"
+    },
+    "central_system": {
+      "heatpump": {
+        "type": "central_heatpump",
+        "params": {
+          "nominal_power_kW": 200,
+          "COP_nominal": 3.6,
+          "source_type": "ground"
+        }
+      }
+    },
+    "ambient_loop": {
+      "main_pipe": {
+        "length_m": 60,
+        "diameter_mm": 100,
+        "insulation_thickness_mm": 40
+      }
+    },
+    "floors": [
+      {
+        "floor_number": 0,
+        "riser_length_m": 3.5,
+        "apartments": [
+          {
+            "id": "apt_0_1",
+            "label": "T2 - GF Left",
+            "type_preset": "T2",
+            "floor_area_m2": 42,
+            "orientation": "south",
+            "heatpump": { "nominal_power_kW": 5, "COP_nominal": 4.2 },
+            "thermal_zone": { "U_wall": 0.22, "U_window": 1.2, "window_area_m2": 5, "n_occupants": 1, "ceiling_height_m": 2.5 }
+          },
+          {
+            "id": "apt_0_2",
+            "label": "T3 - GF Center-Left",
+            "type_preset": "T3",
+            "floor_area_m2": 62,
+            "orientation": "south",
+            "heatpump": { "nominal_power_kW": 7, "COP_nominal": 4.0 },
+            "thermal_zone": { "U_wall": 0.22, "U_window": 1.2, "window_area_m2": 8, "n_occupants": 2, "ceiling_height_m": 2.5 }
+          },
+          {
+            "id": "apt_0_3",
+            "label": "T3 - GF Center-Right",
+            "type_preset": "T3",
+            "floor_area_m2": 62,
+            "orientation": "north",
+            "heatpump": { "nominal_power_kW": 7, "COP_nominal": 4.0 },
+            "thermal_zone": { "U_wall": 0.22, "U_window": 1.2, "window_area_m2": 7, "n_occupants": 3, "ceiling_height_m": 2.5 }
+          },
+          {
+            "id": "apt_0_4",
+            "label": "T2 - GF Right",
+            "type_preset": "T2",
+            "floor_area_m2": 42,
+            "orientation": "north",
+            "heatpump": { "nominal_power_kW": 5, "COP_nominal": 4.2 },
+            "thermal_zone": { "U_wall": 0.22, "U_window": 1.2, "window_area_m2": 5, "n_occupants": 2, "ceiling_height_m": 2.5 }
+          }
+        ]
+      },
+      {
+        "floor_number": 1,
+        "riser_length_m": 3.0,
+        "apartments": [
+          {
+            "id": "apt_1_1",
+            "label": "T2 - 1F Left",
+            "type_preset": "T2",
+            "floor_area_m2": 42,
+            "orientation": "south",
+            "heatpump": { "nominal_power_kW": 5, "COP_nominal": 4.2 },
+            "thermal_zone": { "U_wall": 0.22, "U_window": 1.2, "window_area_m2": 5, "n_occupants": 2, "ceiling_height_m": 2.5 }
+          },
+          {
+            "id": "apt_1_2",
+            "label": "T4 - 1F Center",
+            "type_preset": "T4",
+            "floor_area_m2": 85,
+            "orientation": "south",
+            "heatpump": { "nominal_power_kW": 10, "COP_nominal": 3.9 },
+            "thermal_zone": { "U_wall": 0.22, "U_window": 1.2, "window_area_m2": 12, "n_occupants": 4, "ceiling_height_m": 2.5 }
+          },
+          {
+            "id": "apt_1_3",
+            "label": "T2 - 1F Right",
+            "type_preset": "T2",
+            "floor_area_m2": 42,
+            "orientation": "north",
+            "heatpump": { "nominal_power_kW": 5, "COP_nominal": 4.2 },
+            "thermal_zone": { "U_wall": 0.22, "U_window": 1.2, "window_area_m2": 5, "n_occupants": 1, "ceiling_height_m": 2.5 }
+          }
+        ]
+      },
+      {
+        "floor_number": 2,
+        "riser_length_m": 3.0,
+        "apartments": [
+          {
+            "id": "apt_2_1",
+            "label": "T3 - 2F Left",
+            "type_preset": "T3",
+            "floor_area_m2": 62,
+            "orientation": "south",
+            "heatpump": { "nominal_power_kW": 7, "COP_nominal": 4.0 },
+            "thermal_zone": { "U_wall": 0.22, "U_window": 1.2, "window_area_m2": 8, "n_occupants": 3, "ceiling_height_m": 2.5 }
+          },
+          {
+            "id": "apt_2_2",
+            "label": "T3 - 2F Center",
+            "type_preset": "T3",
+            "floor_area_m2": 65,
+            "orientation": "south",
+            "heatpump": { "nominal_power_kW": 8, "COP_nominal": 4.0 },
+            "thermal_zone": { "U_wall": 0.22, "U_window": 1.2, "window_area_m2": 9, "n_occupants": 2, "ceiling_height_m": 2.5 }
+          },
+          {
+            "id": "apt_2_3",
+            "label": "T2 - 2F Right",
+            "type_preset": "T2",
+            "floor_area_m2": 42,
+            "orientation": "north",
+            "heatpump": { "nominal_power_kW": 5, "COP_nominal": 4.2 },
+            "thermal_zone": { "U_wall": 0.22, "U_window": 1.2, "window_area_m2": 5, "n_occupants": 2, "ceiling_height_m": 2.5 }
+          }
+        ]
+      },
+      {
+        "floor_number": 3,
+        "riser_length_m": 3.0,
+        "apartments": [
+          {
+            "id": "apt_3_1",
+            "label": "T2 - 3F Left",
+            "type_preset": "T2",
+            "floor_area_m2": 42,
+            "orientation": "south",
+            "heatpump": { "nominal_power_kW": 5, "COP_nominal": 4.2 },
+            "thermal_zone": { "U_wall": 0.22, "U_window": 1.2, "window_area_m2": 5, "n_occupants": 1, "ceiling_height_m": 2.5 }
+          },
+          {
+            "id": "apt_3_2",
+            "label": "T4 - 3F Center",
+            "type_preset": "T4",
+            "floor_area_m2": 85,
+            "orientation": "south",
+            "heatpump": { "nominal_power_kW": 10, "COP_nominal": 3.9 },
+            "thermal_zone": { "U_wall": 0.22, "U_window": 1.2, "window_area_m2": 12, "n_occupants": 4, "ceiling_height_m": 2.5 }
+          },
+          {
+            "id": "apt_3_3",
+            "label": "T2 - 3F Right",
+            "type_preset": "T2",
+            "floor_area_m2": 42,
+            "orientation": "north",
+            "heatpump": { "nominal_power_kW": 5, "COP_nominal": 4.2 },
+            "thermal_zone": { "U_wall": 0.22, "U_window": 1.2, "window_area_m2": 5, "n_occupants": 2, "ceiling_height_m": 2.5 }
+          }
+        ]
+      },
+      {
+        "floor_number": 4,
+        "riser_length_m": 3.0,
+        "apartments": [
+          {
+            "id": "apt_4_1",
+            "label": "T4 - 4F Left (Penthouse)",
+            "type_preset": "T4",
+            "floor_area_m2": 95,
+            "orientation": "south",
+            "heatpump": { "nominal_power_kW": 12, "COP_nominal": 3.8 },
+            "thermal_zone": { "U_wall": 0.20, "U_window": 1.1, "window_area_m2": 16, "n_occupants": 3, "ceiling_height_m": 2.7 }
+          },
+          {
+            "id": "apt_4_2",
+            "label": "T4 - 4F Right (Penthouse)",
+            "type_preset": "T4",
+            "floor_area_m2": 95,
+            "orientation": "north",
+            "heatpump": { "nominal_power_kW": 12, "COP_nominal": 3.8 },
+            "thermal_zone": { "U_wall": 0.20, "U_window": 1.1, "window_area_m2": 14, "n_occupants": 2, "ceiling_height_m": 2.7 }
+          }
+        ]
+      }
+    ]
+  },
+  "simulation": {
+    "start_time": 0,
+    "end_time": 31536000,
+    "step_size": 900,
+    "solver": "CVode",
+    "output_interval": 3600
+  }
+}

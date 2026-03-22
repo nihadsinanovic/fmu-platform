@@ -1,0 +1,34 @@
+{
+  "fmu_type": "loop_tee",
+  "fmi_version": "2.0",
+  "fmi_type": "ModelExchange",
+  "version": "1.0.0",
+  "description": "Splitter/mixer for branching the ambient loop. Splits incoming flow equally among N branches and mixes return flows.",
+  "parameters": [
+    { "name": "n_branches", "type": "Integer", "default": 2, "unit": "-", "min": 1, "max": 20 }
+  ],
+  "ports": {
+    "inputs": [
+      { "name": "hydr_in_T", "type": "Real", "unit": "K", "domain": "hydraulic" },
+      { "name": "hydr_in_mdot", "type": "Real", "unit": "kg/s", "domain": "hydraulic" },
+      { "name": "hydr_in_p", "type": "Real", "unit": "Pa", "domain": "hydraulic" },
+      { "name": "hydr_in_T[*]", "type": "Real", "unit": "K", "domain": "hydraulic" },
+      { "name": "hydr_in_mdot[*]", "type": "Real", "unit": "kg/s", "domain": "hydraulic" },
+      { "name": "hydr_in_p[*]", "type": "Real", "unit": "Pa", "domain": "hydraulic" }
+    ],
+    "outputs": [
+      { "name": "hydr_out_T[*]", "type": "Real", "unit": "K", "domain": "hydraulic" },
+      { "name": "hydr_out_mdot[*]", "type": "Real", "unit": "kg/s", "domain": "hydraulic" },
+      { "name": "hydr_out_p[*]", "type": "Real", "unit": "Pa", "domain": "hydraulic" },
+      { "name": "hydr_return_T", "type": "Real", "unit": "K", "domain": "hydraulic" },
+      { "name": "hydr_return_mdot", "type": "Real", "unit": "kg/s", "domain": "hydraulic" },
+      { "name": "hydr_return_p", "type": "Real", "unit": "Pa", "domain": "hydraulic" }
+    ]
+  },
+  "compatible_connections": {
+    "hydr_in": ["ambient_loop_segment.hydr_out", "central_heatpump.hydr_out"],
+    "hydr_out": ["ambient_loop_segment.hydr_in", "apartment_heatpump.hydr_in"],
+    "hydr_in[*]": ["apartment_heatpump.hydr_out", "ambient_loop_segment.hydr_out"],
+    "hydr_return": ["central_heatpump.hydr_in", "ambient_loop_segment.hydr_in"]
+  }
+}

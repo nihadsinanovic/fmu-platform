@@ -1,0 +1,34 @@
+{
+  "fmu_type": "apartment_thermal_zone",
+  "fmi_version": "2.0",
+  "fmi_type": "ModelExchange",
+  "version": "1.0.0",
+  "description": "Thermal model of an apartment. Single-zone RC model accounting for walls, windows, internal gains (occupants, appliances), solar gains, and infiltration.",
+  "parameters": [
+    { "name": "floor_area_m2", "type": "Real", "default": 50.0, "unit": "m2", "min": 10, "max": 300 },
+    { "name": "ceiling_height_m", "type": "Real", "default": 2.5, "unit": "m", "min": 2.0, "max": 5.0 },
+    { "name": "U_wall", "type": "Real", "default": 0.25, "unit": "W/(m2.K)", "min": 0.1, "max": 3.0 },
+    { "name": "U_window", "type": "Real", "default": 1.4, "unit": "W/(m2.K)", "min": 0.5, "max": 5.0 },
+    { "name": "window_area_m2", "type": "Real", "default": 6.0, "unit": "m2", "min": 0.5, "max": 50 },
+    { "name": "n_occupants", "type": "Integer", "default": 2, "unit": "-", "min": 0, "max": 10 },
+    { "name": "orientation", "type": "String", "default": "south" }
+  ],
+  "ports": {
+    "inputs": [
+      { "name": "therm_in_Q_heating", "type": "Real", "unit": "W", "domain": "thermal" },
+      { "name": "therm_in_T_ambient_outdoor", "type": "Real", "unit": "K", "domain": "thermal" },
+      { "name": "therm_in_Q_solar", "type": "Real", "unit": "W", "domain": "thermal" }
+    ],
+    "outputs": [
+      { "name": "therm_out_T_room", "type": "Real", "unit": "K", "domain": "thermal" },
+      { "name": "therm_out_Q_loss", "type": "Real", "unit": "W", "domain": "thermal" },
+      { "name": "therm_out_Q_total", "type": "Real", "unit": "W", "domain": "thermal" }
+    ]
+  },
+  "compatible_connections": {
+    "therm_in_Q_heating": ["apartment_heatpump.therm_out_Q_heating"],
+    "therm_in_T_ambient_outdoor": ["weather_source.therm_out_T_ambient"],
+    "therm_in_Q_solar": ["weather_source.therm_out_Q_solar"],
+    "therm_out_T_room": ["apartment_heatpump.therm_in_T_room"]
+  }
+}

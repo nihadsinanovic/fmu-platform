@@ -1,0 +1,30 @@
+{
+  "fmu_type": "ambient_loop_segment",
+  "fmi_version": "2.0",
+  "fmi_type": "ModelExchange",
+  "version": "1.0.0",
+  "description": "A pipe segment of the ambient heating loop. Models heat losses, pressure drop, and thermal inertia of the fluid.",
+  "parameters": [
+    { "name": "length_m", "type": "Real", "default": 10.0, "unit": "m", "min": 0.1, "max": 200 },
+    { "name": "diameter_mm", "type": "Real", "default": 80.0, "unit": "mm", "min": 20, "max": 300 },
+    { "name": "insulation_thickness_mm", "type": "Real", "default": 30.0, "unit": "mm", "min": 0, "max": 100 }
+  ],
+  "ports": {
+    "inputs": [
+      { "name": "hydr_in_T", "type": "Real", "unit": "K", "domain": "hydraulic" },
+      { "name": "hydr_in_mdot", "type": "Real", "unit": "kg/s", "domain": "hydraulic" },
+      { "name": "hydr_in_p", "type": "Real", "unit": "Pa", "domain": "hydraulic" },
+      { "name": "therm_in_T_ambient", "type": "Real", "unit": "K", "domain": "thermal" }
+    ],
+    "outputs": [
+      { "name": "hydr_out_T", "type": "Real", "unit": "K", "domain": "hydraulic" },
+      { "name": "hydr_out_mdot", "type": "Real", "unit": "kg/s", "domain": "hydraulic" },
+      { "name": "hydr_out_p", "type": "Real", "unit": "Pa", "domain": "hydraulic" },
+      { "name": "therm_out_Q_loss", "type": "Real", "unit": "W", "domain": "thermal" }
+    ]
+  },
+  "compatible_connections": {
+    "hydr_in": ["central_heatpump.hydr_out", "loop_tee.hydr_out", "apartment_heatpump.hydr_out"],
+    "hydr_out": ["central_heatpump.hydr_in", "loop_tee.hydr_in", "apartment_heatpump.hydr_in"]
+  }
+}

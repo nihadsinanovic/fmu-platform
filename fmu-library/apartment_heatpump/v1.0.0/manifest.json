@@ -1,0 +1,33 @@
+{
+  "fmu_type": "apartment_heatpump",
+  "fmi_version": "2.0",
+  "fmi_type": "ModelExchange",
+  "version": "1.0.0",
+  "description": "Per-apartment heat pump that draws heat from the ambient loop and delivers heating to the apartment thermal zone. Modulates based on room temperature feedback.",
+  "parameters": [
+    { "name": "nominal_power_kW", "type": "Real", "default": 5.0, "unit": "kW", "min": 1, "max": 30 },
+    { "name": "COP_nominal", "type": "Real", "default": 4.2, "unit": "-", "min": 2.0, "max": 7.0 }
+  ],
+  "ports": {
+    "inputs": [
+      { "name": "hydr_in_T", "type": "Real", "unit": "K", "domain": "hydraulic" },
+      { "name": "hydr_in_mdot", "type": "Real", "unit": "kg/s", "domain": "hydraulic" },
+      { "name": "hydr_in_p", "type": "Real", "unit": "Pa", "domain": "hydraulic" },
+      { "name": "therm_in_T_room", "type": "Real", "unit": "K", "domain": "thermal" },
+      { "name": "ctrl_in_signal", "type": "Real", "unit": "-", "domain": "control" }
+    ],
+    "outputs": [
+      { "name": "hydr_out_T", "type": "Real", "unit": "K", "domain": "hydraulic" },
+      { "name": "hydr_out_mdot", "type": "Real", "unit": "kg/s", "domain": "hydraulic" },
+      { "name": "hydr_out_p", "type": "Real", "unit": "Pa", "domain": "hydraulic" },
+      { "name": "therm_out_Q_heating", "type": "Real", "unit": "W", "domain": "thermal" },
+      { "name": "elec_out_P", "type": "Real", "unit": "W", "domain": "electrical" }
+    ]
+  },
+  "compatible_connections": {
+    "hydr_in": ["loop_tee.hydr_out", "ambient_loop_segment.hydr_out"],
+    "hydr_out": ["loop_tee.hydr_in", "ambient_loop_segment.hydr_in"],
+    "therm_in_T_room": ["apartment_thermal_zone.therm_out_T_room"],
+    "therm_out_Q_heating": ["apartment_thermal_zone.therm_in_Q_heating"]
+  }
+}
