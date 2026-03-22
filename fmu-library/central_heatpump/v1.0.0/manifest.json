@@ -1,0 +1,31 @@
+{
+  "fmu_type": "central_heatpump",
+  "fmi_version": "2.0",
+  "fmi_type": "ModelExchange",
+  "version": "1.0.0",
+  "description": "Central heat pump for an ambient-loop building system. Heats a glycol/water loop using ground, air, or water as a heat source.",
+  "parameters": [
+    { "name": "nominal_power_kW", "type": "Real", "default": 50.0, "unit": "kW", "min": 5, "max": 500 },
+    { "name": "COP_nominal", "type": "Real", "default": 3.8, "unit": "-", "min": 2.0, "max": 6.0 },
+    { "name": "source_type", "type": "String", "default": "ground" }
+  ],
+  "ports": {
+    "inputs": [
+      { "name": "hydr_in_T", "type": "Real", "unit": "K", "domain": "hydraulic" },
+      { "name": "hydr_in_mdot", "type": "Real", "unit": "kg/s", "domain": "hydraulic" },
+      { "name": "hydr_in_p", "type": "Real", "unit": "Pa", "domain": "hydraulic" },
+      { "name": "ctrl_in_signal", "type": "Real", "unit": "-", "domain": "control" }
+    ],
+    "outputs": [
+      { "name": "hydr_out_T", "type": "Real", "unit": "K", "domain": "hydraulic" },
+      { "name": "hydr_out_mdot", "type": "Real", "unit": "kg/s", "domain": "hydraulic" },
+      { "name": "hydr_out_p", "type": "Real", "unit": "Pa", "domain": "hydraulic" },
+      { "name": "elec_out_P", "type": "Real", "unit": "W", "domain": "electrical" },
+      { "name": "therm_out_Q", "type": "Real", "unit": "W", "domain": "thermal" }
+    ]
+  },
+  "compatible_connections": {
+    "hydr_in": ["ambient_loop_segment.hydr_out", "loop_tee.hydr_return"],
+    "hydr_out": ["ambient_loop_segment.hydr_in", "loop_tee.hydr_in"]
+  }
+}

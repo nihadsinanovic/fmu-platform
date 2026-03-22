@@ -1,0 +1,25 @@
+{
+  "fmu_type": "weather_source",
+  "fmi_version": "2.0",
+  "fmi_type": "ModelExchange",
+  "version": "1.0.0",
+  "description": "Outdoor weather conditions driver. Reads climate data and outputs ambient temperature, solar irradiance, wind speed, and humidity for the simulation period.",
+  "parameters": [
+    { "name": "lat", "type": "Real", "default": 45.19, "unit": "deg", "min": -90, "max": 90 },
+    { "name": "lon", "type": "Real", "default": 5.72, "unit": "deg", "min": -180, "max": 180 },
+    { "name": "climate_zone", "type": "String", "default": "H1c" }
+  ],
+  "ports": {
+    "inputs": [],
+    "outputs": [
+      { "name": "therm_out_T_ambient", "type": "Real", "unit": "K", "domain": "thermal" },
+      { "name": "therm_out_Q_solar", "type": "Real", "unit": "W/m2", "domain": "thermal" },
+      { "name": "therm_out_humidity", "type": "Real", "unit": "%", "domain": "thermal" },
+      { "name": "therm_out_wind_speed", "type": "Real", "unit": "m/s", "domain": "thermal" }
+    ]
+  },
+  "compatible_connections": {
+    "therm_out_T_ambient": ["apartment_thermal_zone.therm_in_T_ambient_outdoor", "ambient_loop_segment.therm_in_T_ambient"],
+    "therm_out_Q_solar": ["apartment_thermal_zone.therm_in_Q_solar"]
+  }
+}
