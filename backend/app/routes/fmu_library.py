@@ -463,12 +463,17 @@ def _run_fmu_test_sync(
         logger.info("FMU ready at: %s", ready_fmu)
 
         # Copy data files into working directory so the FMU binary can find them
+        # Normalize .data files (BOM, line endings) for Linux runtime
         data_dir = fmu_path.parent / "data"
         if data_dir.exists():
+            from engine.fmu_utils import _normalize_data_file_for_injection
             for data_file in data_dir.iterdir():
                 if data_file.is_file():
                     dest = work_path / data_file.name
-                    shutil.copy2(str(data_file), str(dest))
+                    if data_file.suffix == ".data":
+                        _normalize_data_file_for_injection(data_file, dest)
+                    else:
+                        shutil.copy2(str(data_file), str(dest))
                     logger.info("Copied data file to work dir: %s", data_file.name)
 
         # Change to work dir so the FMU binary can find data files by relative path

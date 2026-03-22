@@ -286,6 +286,46 @@ class DataFileValidation:
     error: str = ""
 
 
+def _normalize_data_file_for_injection(src: Path, dest: Path) -> bool:
+    """Normalize an AMESim .data file for Linux runtime compatibility.
+
+    Handles cross-platform issues that can cause AMESim's C binary to fail:
+    - Strips UTF-8 BOM (byte order mark)
+    - Converts Windows line endings (\\r\\n) to Unix (\\n)
+    - Strips trailing \\r from lines
+
+    This is NOT a format repair (adding headers) — it's basic encoding
+    normalization so the file is readable by AMESim on Linux.
+
+    Returns True if the file was modified, False if already clean.
+    """
+    raw = src.read_bytes()
+    modified = False
+
+    # Strip UTF-8 BOM if present
+    if raw.startswith(b"\xef\xbb\xbf"):
+        raw = raw[3:]
+        modified = True
+        logger.info("Stripped UTF-8 BOM from %s", src.name)
+
+    # Normalize line endings: \r\n → \n and lone \r → \n
+    if b"\r" in raw:
+        raw = raw.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+        modified = True
+        logger.info("Normalized line endings in %s", src.name)
+
+    dest.write_bytes(raw)
+
+    if modified:
+        logger.info(
+            "Normalized data file %s for injection (%d bytes)",
+            src.name,
+            len(raw),
+        )
+
+    return modified
+
+
 def _is_comment_line(line: str) -> bool:
     """Check if a line is a comment in AMESim .data format.
 
@@ -420,7 +460,9 @@ def validate_amesim_data_file(file_path: Path) -> DataFileValidation:
             )
             return result
 
-    result.valid = True
+    # File is only fully valid if it has a correct header
+    # (without the header, AMESim will fail with "Undetermined format")
+    result.valid = result.has_header
     return result
 
 
@@ -434,14 +476,15 @@ def repair_amesim_data_file(file_path: Path) -> DataFileValidation:
     """
     validation = validate_amesim_data_file(file_path)
 
-    if not validation.valid:
-        return validation
-
     if validation.has_header:
-        # Already has a proper header
+        # Already has a proper header — nothing to repair
         return validation
 
-    # File is valid data but missing header — add it
+    if validation.error:
+        # File has structural issues that can't be auto-repaired
+        return validation
+
+    # File has valid data but is missing header — add it
     text = file_path.read_text(encoding="utf-8", errors="replace")
     lines = text.splitlines(keepends=True)
 
@@ -455,6 +498,7 @@ def repair_amesim_data_file(file_path: Path) -> DataFileValidation:
     file_path.write_text("".join(lines), encoding="utf-8")
 
     validation.has_header = True
+    validation.valid = True
     validation.repaired = True
     logger.info(
         "Repaired AMESim data file %s: added header (%d points, %d vars)",
@@ -493,6 +537,8 @@ def prepare_fmu_for_simulation(fmu_path: Path, work_dir: Path) -> Path:
     # Collect data files to inject into resources/
     data_dir = fmu_path.parent / "data"
     inject_resources: dict[str, Path] = {}
+    # Temp dir for normalized copies of .data files (cleaned up later)
+    norm_dir: Path | None = None
     if data_dir.exists():
         for f in data_dir.iterdir():
             if f.is_file():
@@ -509,16 +555,26 @@ def prepare_fmu_for_simulation(fmu_path: Path, work_dir: Path) -> Path:
                     if validation.error:
                         logger.warning("Data file %s has issues: %s", f.name, validation.error)
 
-                inject_resources[f.name] = f
+                    # Normalize .data files (BOM, line endings) for Linux runtime
+                    if norm_dir is None:
+                        norm_dir = Path(tempfile.mkdtemp(prefix="fmu_norm_"))
+                    norm_path = norm_dir / f.name
+                    _normalize_data_file_for_injection(f, norm_path)
+                    inject_resources[f.name] = norm_path
+                else:
+                    inject_resources[f.name] = f
+
                 size = f.stat().st_size
                 logger.info(
                     "Will inject data file into FMU resources: %s (%d bytes)",
                     f.name,
                     size,
                 )
-                # Log first lines of .data files for diagnostics
+                # Log first bytes and lines of .data files for diagnostics
                 if f.suffix == ".data":
                     try:
+                        raw_bytes = f.read_bytes()[:20]
+                        logger.info("  %s first bytes: %r", f.name, raw_bytes)
                         first_lines = f.read_text(
                             encoding="utf-8", errors="replace"
                         ).splitlines()[:3]
@@ -533,18 +589,58 @@ def prepare_fmu_for_simulation(fmu_path: Path, work_dir: Path) -> Path:
 
     dest_path = work_dir / fmu_path.name
 
-    if not needs_patch:
-        # Still need to ensure resources/ directory exists in the FMU
-        _ensure_resources_dir(fmu_path, dest_path)
-        return dest_path
+    try:
+        if not needs_patch:
+            # Still need to ensure resources/ directory exists in the FMU
+            _ensure_resources_dir(fmu_path, dest_path)
+            return dest_path
 
-    return patch_fmu(
-        fmu_path,
-        dest_path,
-        fix_needs_execution_tool=inspection.needs_execution_tool,
-        inject_resources=inject_resources if inject_resources else None,
-        ensure_resources_dir=True,
-    )
+        result = patch_fmu(
+            fmu_path,
+            dest_path,
+            fix_needs_execution_tool=inspection.needs_execution_tool,
+            inject_resources=inject_resources if inject_resources else None,
+            ensure_resources_dir=True,
+        )
+
+        # Verify injected data files are present and non-empty in the ZIP
+        if inject_resources:
+            with zipfile.ZipFile(result, "r") as zf:
+                for filename in inject_resources:
+                    arcname = f"resources/{filename}"
+                    if arcname not in zf.namelist():
+                        logger.error(
+                            "VERIFICATION FAILED: %s not found in patched FMU ZIP",
+                            arcname,
+                        )
+                    else:
+                        info = zf.getinfo(arcname)
+                        logger.info(
+                            "Verified %s in FMU ZIP: %d bytes (compressed: %d)",
+                            arcname,
+                            info.file_size,
+                            info.compress_size,
+                        )
+                        if info.file_size == 0:
+                            logger.error(
+                                "VERIFICATION FAILED: %s is empty in FMU ZIP!",
+                                arcname,
+                            )
+                        # Log first bytes of the injected file from the ZIP
+                        if filename.endswith(".data"):
+                            with zf.open(arcname) as zentry:
+                                head = zentry.read(200)
+                                logger.info(
+                                    "  %s in ZIP starts with: %r",
+                                    arcname,
+                                    head[:100],
+                                )
+
+        return result
+    finally:
+        # Clean up temporary normalized files
+        if norm_dir is not None:
+            shutil.rmtree(str(norm_dir), ignore_errors=True)
 
 
 def _ensure_resources_dir(src_fmu: Path, dest_fmu: Path) -> None:
