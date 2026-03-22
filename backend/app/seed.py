@@ -52,10 +52,33 @@ async def seed_fmu_library(session) -> None:
             continue
 
         with open(manifest_path) as f:
-            manifest = json.load(f)
+            raw = json.load(f)
 
-        version = manifest.get("version", "1.0.0")
+        version = raw.get("version", "1.0.0")
         fmu_file = library_root / fmu_type / f"v{version}" / f"{fmu_type}.fmu"
+
+        # Normalize manifest to the format the frontend expects
+        # (same shape as what the upload endpoint produces)
+        ports = raw.get("ports", {})
+        manifest = {
+            "fmu_type": raw.get("fmu_type", fmu_type),
+            "fmi_version": raw.get("fmi_version", "2.0"),
+            "fmi_type": raw.get("fmi_type", "ModelExchange"),
+            "version": version,
+            "generation_tool": raw.get("generation_tool", "fmu-platform stub generator"),
+            "guid": raw.get("guid", ""),
+            "model_identifier": raw.get("model_identifier", fmu_type),
+            "inputs": [
+                {"name": p["name"], "type": p.get("type", "Real"), "causality": "input"}
+                for p in ports.get("inputs", [])
+            ],
+            "outputs": [
+                {"name": p["name"], "type": p.get("type", "Real"), "causality": "output"}
+                for p in ports.get("outputs", [])
+            ],
+            "parameters": raw.get("parameters", []),
+            "compatible_connections": raw.get("compatible_connections", {}),
+        }
 
         record = FMULibrary(
             type_name=fmu_type,
