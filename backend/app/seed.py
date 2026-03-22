@@ -35,7 +35,7 @@ async def seed() -> None:
             await session.commit()
             log.info("Seeded user '%s'.", SEED_USERNAME)
     except Exception:
-        log.warning("Could not seed admin user (DB not available?). Will retry on next startup.")
+        log.exception("Could not seed admin user.")
 
 
 if __name__ == "__main__":
