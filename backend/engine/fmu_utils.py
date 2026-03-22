@@ -420,7 +420,9 @@ def validate_amesim_data_file(file_path: Path) -> DataFileValidation:
             )
             return result
 
-    result.valid = True
+    # File is only fully valid if it has a correct header
+    # (without the header, AMESim will fail with "Undetermined format")
+    result.valid = result.has_header
     return result
 
 
@@ -434,14 +436,15 @@ def repair_amesim_data_file(file_path: Path) -> DataFileValidation:
     """
     validation = validate_amesim_data_file(file_path)
 
-    if not validation.valid:
-        return validation
-
     if validation.has_header:
-        # Already has a proper header
+        # Already has a proper header — nothing to repair
         return validation
 
-    # File is valid data but missing header — add it
+    if validation.error:
+        # File has structural issues that can't be auto-repaired
+        return validation
+
+    # File has valid data but is missing header — add it
     text = file_path.read_text(encoding="utf-8", errors="replace")
     lines = text.splitlines(keepends=True)
 
@@ -455,6 +458,7 @@ def repair_amesim_data_file(file_path: Path) -> DataFileValidation:
     file_path.write_text("".join(lines), encoding="utf-8")
 
     validation.has_header = True
+    validation.valid = True
     validation.repaired = True
     logger.info(
         "Repaired AMESim data file %s: added header (%d points, %d vars)",
