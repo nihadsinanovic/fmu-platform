@@ -1,7 +1,6 @@
 # AMESim weather data - Lund, Sweden (55.7degN, 13.2degE)
 # Full year, hourly resolution (8760 points)
 # Columns: Time(s)  Temperature(degC)  DirectSolar(W/m2)  DiffuseSolar(W/m2)  CloudCover(0-1)
-8760 4
 0.0 2.63 0.00 0.00 0.590
 3600.0 3.21 0.00 0.00 0.581
 7200.0 3.59 0.00 0.00 0.572
