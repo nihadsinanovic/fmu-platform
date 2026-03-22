@@ -3,6 +3,7 @@
 Run with:  python -m app.seed
 """
 import asyncio
+import logging
 
 from sqlalchemy import select
 
@@ -11,25 +12,30 @@ from app.database import async_session_maker, engine
 from app.models.base import Base
 from app.models.user import User
 
+log = logging.getLogger(__name__)
+
 SEED_USERNAME = "admin"
 SEED_PASSWORD = "MacBook08"
 
 
 async def seed() -> None:
-    # Ensure tables exist (safe if Alembic already ran)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    try:
+        # Ensure tables exist (creates them if missing — no Alembic needed)
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
 
-    async with async_session_maker() as session:
-        result = await session.execute(select(User).where(User.username == SEED_USERNAME))
-        if result.scalar_one_or_none() is not None:
-            print(f"User '{SEED_USERNAME}' already exists — skipping seed.")
-            return
+        async with async_session_maker() as session:
+            result = await session.execute(select(User).where(User.username == SEED_USERNAME))
+            if result.scalar_one_or_none() is not None:
+                log.info("User '%s' already exists — skipping seed.", SEED_USERNAME)
+                return
 
-        user = User(username=SEED_USERNAME, hashed_password=hash_password(SEED_PASSWORD))
-        session.add(user)
-        await session.commit()
-        print(f"Seeded user '{SEED_USERNAME}'.")
+            user = User(username=SEED_USERNAME, hashed_password=hash_password(SEED_PASSWORD))
+            session.add(user)
+            await session.commit()
+            log.info("Seeded user '%s'.", SEED_USERNAME)
+    except Exception:
+        log.warning("Could not seed admin user (DB not available?). Will retry on next startup.")
 
 
 if __name__ == "__main__":
