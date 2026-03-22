@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database import get_db
 from app.models.fmu_library import FMULibrary
-from engine.fmu_utils import inspect_fmu
+from engine.fmu_utils import inspect_fmu, repair_amesim_data_file
 
 router = APIRouter(prefix="/api/fmu-library", tags=["fmu-library"])
 
@@ -251,8 +251,12 @@ async def upload_resource(
 
     AMESim FMUs sometimes require external data files (e.g., weather data,
     lookup tables) that weren't bundled during export. Files are stored
-    alongside the FMU and copied into the working directory at simulation time.
-    The original FMU is never modified.
+    alongside the FMU and injected into the FMU's resources/ directory at
+    simulation time.
+
+    For AMESim .data files, the format is validated and auto-repaired:
+    if the required ``npoints nvars`` header line is missing, it is added
+    automatically so AMESim's table reader can parse the file.
     """
     result = await db.execute(
         select(FMULibrary).where(FMULibrary.type_name == type_name)
@@ -273,11 +277,31 @@ async def upload_resource(
     with open(dest, "wb") as f:
         shutil.copyfileobj(file.file, f)
 
-    return {
+    # Validate and auto-repair AMESim .data files
+    response: dict = {
         "message": f"Data file '{file.filename}' stored for {type_name}",
         "type_name": type_name,
         "resource": file.filename,
     }
+
+    if file.filename.endswith(".data"):
+        validation = repair_amesim_data_file(dest)
+        response["format_valid"] = validation.valid
+        response["n_points"] = validation.n_points
+        response["n_vars"] = validation.n_vars
+        response["has_header"] = validation.has_header
+        if validation.repaired:
+            response["repaired"] = True
+            response["message"] = (
+                f"Data file '{file.filename}' stored for {type_name}. "
+                f"Auto-repaired: added AMESim table header "
+                f"({validation.n_points} points, {validation.n_vars} vars)."
+            )
+        if validation.error:
+            # File has issues that can't be auto-repaired — warn but still store
+            response["warning"] = validation.error
+
+    return response
 
 
 @router.get("/{type_name}/resources")
@@ -425,6 +449,40 @@ def _run_fmu_test_sync(
                     f"License server: {license_server}\n"
                     f"Verify that AMESIM_LICENSE_SERVER is set correctly in .env "
                     f"and that the license server is reachable from this host.\n\n"
+                    f"FMU log:\n{fmu_log}"
+                ) from sim_exc
+
+            # Detect AMESim data file format errors
+            if "Undetermined format" in fmu_log or "File has no data" in fmu_log:
+                # List data files in work dir and FMU resources for diagnostics
+                data_files_info = []
+                data_dir = fmu_path.parent / "data"
+                if data_dir.exists():
+                    for df in data_dir.iterdir():
+                        if df.is_file():
+                            try:
+                                first_line = df.read_text(
+                                    encoding="utf-8", errors="replace"
+                                ).splitlines()[0][:100]
+                            except Exception:
+                                first_line = "(unreadable)"
+                            data_files_info.append(
+                                f"  {df.name} ({df.stat().st_size} bytes) "
+                                f"first line: {first_line!r}"
+                            )
+                files_detail = "\n".join(data_files_info) if data_files_info else "  (none)"
+
+                raise RuntimeError(
+                    f"AMESim data file format error. The FMU's table reader "
+                    f"could not parse a .data file.\n\n"
+                    f"This usually means the file is missing the required "
+                    f"AMESim table header. The first non-comment line must be:\n"
+                    f"  npoints\\tnvars\n"
+                    f"For example, for 8760 hourly points with 4 variables:\n"
+                    f"  8760\\t4\n\n"
+                    f"Try re-uploading the data file — the server now auto-repairs "
+                    f"files that are missing this header.\n\n"
+                    f"Data files on disk:\n{files_detail}\n\n"
                     f"FMU log:\n{fmu_log}"
                 ) from sim_exc
 
