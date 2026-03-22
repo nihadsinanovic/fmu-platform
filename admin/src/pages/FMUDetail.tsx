@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { getFMUManifest, runFMUTest, listResources, uploadResource, deleteResource } from '../api'
+import { getFMUManifest, runFMUTest, listResources, uploadResource, deleteResource, generateWeatherData } from '../api'
 import type { FMUManifest, FMUTestRunResult } from '../types'
 
 // ── Plotly chart for test-run results ─────────────────────────────────────────
@@ -88,6 +88,7 @@ export default function FMUDetail() {
   const [dataFiles, setDataFiles] = useState<{ name: string; size_bytes: number }[]>([])
   const [dataLoading, setDataLoading] = useState(false)
   const [uploadingFile, setUploadingFile] = useState(false)
+  const [generatingWeather, setGeneratingWeather] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -136,6 +137,20 @@ export default function FMUDetail() {
       setDataFiles((prev) => prev.filter((f) => f.name !== filename))
     } catch {
       // ignore
+    }
+  }
+
+  async function handleGenerateWeatherData() {
+    if (!typeName) return
+    setGeneratingWeather(true)
+    try {
+      await generateWeatherData(typeName, {})
+      const r = await listResources(typeName)
+      setDataFiles(r.resources)
+    } catch {
+      // ignore
+    } finally {
+      setGeneratingWeather(false)
     }
   }
 
@@ -276,7 +291,21 @@ export default function FMUDetail() {
               <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
                 Data Files ({dataFiles.length})
               </h2>
-              <div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => void handleGenerateWeatherData()}
+                  disabled={generatingWeather}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-300 bg-amber-900/30 hover:bg-amber-900/50 border border-amber-800/50 disabled:opacity-50 rounded-lg transition-colors"
+                >
+                  {generatingWeather ? (
+                    <div className="w-3 h-3 border-2 border-amber-500 border-t-amber-300 rounded-full animate-spin" />
+                  ) : (
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15a4.5 4.5 0 004.5 4.5H18a3.75 3.75 0 001.332-7.257 3 3 0 00-3.758-3.848 5.25 5.25 0 00-10.233 2.33A4.502 4.502 0 002.25 15z" />
+                    </svg>
+                  )}
+                  Generate Weather
+                </button>
                 <input
                   ref={fileInputRef}
                   type="file"
