@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
+import { useAuth } from '../auth'
 
 const navItems = [
   {
@@ -32,6 +33,7 @@ const navItems = [
 ]
 
 export default function Layout() {
+  const { username, logout } = useAuth()
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   return (
@@ -115,7 +117,7 @@ export default function Layout() {
         </nav>
 
         {/* Footer */}
-        <div className="px-5 py-4 border-t border-gray-800">
+        <div className="px-5 py-4 border-t border-gray-800 space-y-3">
           <a
             href="/docs"
             target="_blank"
@@ -127,6 +129,15 @@ export default function Layout() {
             </svg>
             API Docs
           </a>
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-gray-500 truncate">{username}</span>
+            <button
+              onClick={logout}
+              className="text-xs text-gray-500 hover:text-red-400 transition-colors"
+            >
+              Sign out
+            </button>
+          </div>
         </div>
       </aside>
 

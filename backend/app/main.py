@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
-from app.routes import admin, fmu_library, jobs, projects, websocket
+from app.routes import admin, auth, fmu_library, jobs, projects, websocket
 
 # Built admin panel is copied here during Docker build (see Dockerfile).
 # When running locally without a build, this path won't exist and the
@@ -21,6 +21,11 @@ async def lifespan(app: FastAPI):
     # Startup: ensure storage directories exist
     settings.PROJECTS_PATH.mkdir(parents=True, exist_ok=True)
     settings.TEMP_PATH.mkdir(parents=True, exist_ok=True)
+
+    # Seed default admin user
+    from app.seed import seed
+    await seed()
+
     yield
     # Shutdown: nothing to clean up
 
@@ -39,6 +44,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth.router)
 app.include_router(projects.router)
 app.include_router(jobs.router)
 app.include_router(fmu_library.router)

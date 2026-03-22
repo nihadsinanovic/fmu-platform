@@ -1,9 +1,32 @@
 import type { FMUListItem, FMUDetail, FMUUploadResponse, FMUTestRunRequest, FMUTestRunResult, Job, JobStatusDetail, ResultsData } from './types'
 
 const BASE = ''
+const STORAGE_KEY = 'fmu_auth'
+
+function getToken(): string | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      return parsed.token ?? null
+    }
+  } catch { /* ignore */ }
+  return null
+}
+
+function authHeaders(): Record<string, string> {
+  const token = getToken()
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, init)
+  const headers = { ...authHeaders(), ...init?.headers }
+  const res = await fetch(`${BASE}${path}`, { ...init, headers })
+  if (res.status === 401) {
+    localStorage.removeItem(STORAGE_KEY)
+    window.location.href = '/admin/login'
+    throw new Error('Unauthorized')
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText)
     throw new Error(`${res.status}: ${text}`)
