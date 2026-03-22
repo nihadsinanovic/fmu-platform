@@ -274,3 +274,6 @@ FMI2_EXPORT fmi2Status fmi2GetNominalsOfContinuousStates(fmi2Component c, fmi2Re
     for (size_t i = 0; i < nx; i++) x_nominal[i] = 1.0;
     return fmi2OK;
 }
+
+/* Common FMI 2.0 function stubs (debug logging, state serialization, etc.) */
+#include "fmu_common_impl.h"

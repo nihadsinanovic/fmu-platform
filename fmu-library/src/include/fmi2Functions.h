@@ -49,6 +49,28 @@ FMI2_EXPORT fmi2Status fmi2GetBoolean(fmi2Component c, const fmi2ValueReference 
 FMI2_EXPORT fmi2Status fmi2SetString(fmi2Component c, const fmi2ValueReference vr[], size_t nvr, const fmi2String value[]);
 FMI2_EXPORT fmi2Status fmi2GetString(fmi2Component c, const fmi2ValueReference vr[], size_t nvr, fmi2String value[]);
 
+/* Inquiry functions */
+FMI2_EXPORT const char* fmi2GetTypesPlatform(void);
+FMI2_EXPORT const char* fmi2GetVersion(void);
+
+/* Debug logging */
+FMI2_EXPORT fmi2Status fmi2SetDebugLogging(fmi2Component c, fmi2Boolean loggingOn,
+    size_t nCategories, const fmi2String categories[]);
+
+/* FMU state management (optional, return fmi2Error to indicate not supported) */
+FMI2_EXPORT fmi2Status fmi2GetFMUstate(fmi2Component c, fmi2FMUstate* FMUstate);
+FMI2_EXPORT fmi2Status fmi2SetFMUstate(fmi2Component c, fmi2FMUstate FMUstate);
+FMI2_EXPORT fmi2Status fmi2FreeFMUstate(fmi2Component c, fmi2FMUstate* FMUstate);
+FMI2_EXPORT fmi2Status fmi2SerializedFMUstateSize(fmi2Component c, fmi2FMUstate FMUstate, size_t* size);
+FMI2_EXPORT fmi2Status fmi2SerializeFMUstate(fmi2Component c, fmi2FMUstate FMUstate, fmi2Byte serializedState[], size_t size);
+FMI2_EXPORT fmi2Status fmi2DeSerializeFMUstate(fmi2Component c, const fmi2Byte serializedState[], size_t size, fmi2FMUstate* FMUstate);
+
+/* Directional derivatives (optional) */
+FMI2_EXPORT fmi2Status fmi2GetDirectionalDerivative(fmi2Component c,
+    const fmi2ValueReference vUnknown_ref[], size_t nUnknown,
+    const fmi2ValueReference vKnown_ref[], size_t nKnown,
+    const fmi2Real dvKnown[], fmi2Real dvUnknown[]);
+
 /* Model Exchange specific */
 FMI2_EXPORT fmi2Status fmi2SetTime(fmi2Component c, fmi2Real time);
 FMI2_EXPORT fmi2Status fmi2SetContinuousStates(fmi2Component c, const fmi2Real x[], size_t nx);
