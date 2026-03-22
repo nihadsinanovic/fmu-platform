@@ -240,6 +240,26 @@ def setup_amesim_environment(temp_path: Path, license_server: str = "") -> None:
         os.environ["AME"] = str(ame_stub)
         logger.info("Set $AME to stub directory: %s", ame_stub)
 
+    # ── UGS license file ─────────────────────────────────────────────
+    # AMESim FMUs look for a license file at $AME/../Common/licensing/UGS.lic
+    # when the env-var-based licensing fails.  Create it so the FMU's
+    # internal UGS licensing library can connect to the FlexLM server.
+    if server:
+        ame_dir = Path(os.environ.get("AME", str(temp_path / "ame_stub")))
+        lic_dir = ame_dir.parent / "Common" / "licensing"
+        lic_file = lic_dir / "UGS.lic"
+        if not lic_file.exists():
+            # Parse "port@host" format
+            parts = server.split("@", 1)
+            if len(parts) == 2:
+                port, host = parts
+                lic_dir.mkdir(parents=True, exist_ok=True)
+                lic_file.write_text(
+                    f"SERVER {host} ANY {port}\nUSE_SERVER\n",
+                    encoding="utf-8",
+                )
+                logger.info("Created UGS license file: %s", lic_file)
+
 
 def prepare_fmu_for_simulation(fmu_path: Path, work_dir: Path) -> Path:
     """Prepare an FMU for simulation — patch and copy to work directory.
