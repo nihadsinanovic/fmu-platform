@@ -155,8 +155,70 @@ export default function Accounts() {
         </form>
       )}
 
-      {/* User list */}
-      <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+      {/* User list — cards on mobile, table on md+ */}
+      <div className="space-y-3 md:hidden">
+        {users.map((user) => {
+          const isSelf = user.username.toLowerCase() === currentUsername?.toLowerCase()
+          return (
+            <div key={user.id} className="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-white font-medium">{user.username}</span>
+                  {isSelf && <span className="text-xs text-gray-500">(you)</span>}
+                </div>
+                {user.is_admin ? (
+                  <span className="text-xs font-medium text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded-full px-2.5 py-0.5">
+                    Admin
+                  </span>
+                ) : (
+                  <span className="text-xs font-medium text-gray-400 bg-gray-700/50 border border-gray-700 rounded-full px-2.5 py-0.5">
+                    User
+                  </span>
+                )}
+              </div>
+              {resetId === user.id ? (
+                <form
+                  onSubmit={(e) => { e.preventDefault(); handleResetPassword(user.id) }}
+                  className="flex items-center gap-2"
+                >
+                  <input
+                    type="password"
+                    required
+                    value={resetPassword}
+                    onChange={(e) => setResetPassword(e.target.value)}
+                    placeholder="New password"
+                    className="flex-1 rounded-lg bg-gray-800 border border-gray-700 px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                  <button type="submit" className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">Save</button>
+                  <button type="button" onClick={() => { setResetId(null); setResetPassword('') }} className="text-xs text-gray-500 hover:text-gray-300 transition-colors">Cancel</button>
+                </form>
+              ) : (
+                <div className="flex items-center gap-3 pt-1 border-t border-gray-800">
+                  {!isSelf && (
+                    <button onClick={() => handleToggleAdmin(user)} className="text-xs text-gray-400 hover:text-indigo-400 transition-colors">
+                      {user.is_admin ? 'Revoke admin' : 'Make admin'}
+                    </button>
+                  )}
+                  <button onClick={() => { setResetId(user.id); setResetPassword('') }} className="text-xs text-gray-400 hover:text-indigo-400 transition-colors">
+                    Reset password
+                  </button>
+                  {!isSelf && (
+                    <button onClick={() => handleDelete(user)} className="text-xs text-gray-400 hover:text-red-400 transition-colors ml-auto">
+                      Delete
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        })}
+        {users.length === 0 && (
+          <p className="text-center text-gray-500 py-8 text-sm">No accounts found.</p>
+        )}
+      </div>
+
+      {/* Desktop table */}
+      <div className="hidden md:block bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-800 text-gray-400">
@@ -187,17 +249,14 @@ export default function Accounts() {
                   </td>
                   <td className="px-5 py-3">
                     <div className="flex items-center justify-end gap-2">
-                      {/* Toggle admin */}
                       {!isSelf && (
                         <button
                           onClick={() => handleToggleAdmin(user)}
                           className="text-xs text-gray-400 hover:text-indigo-400 transition-colors"
-                          title={user.is_admin ? 'Revoke admin' : 'Make admin'}
                         >
                           {user.is_admin ? 'Revoke admin' : 'Make admin'}
                         </button>
                       )}
-                      {/* Reset password */}
                       {resetId === user.id ? (
                         <form
                           onSubmit={(e) => { e.preventDefault(); handleResetPassword(user.id) }}
@@ -211,19 +270,8 @@ export default function Accounts() {
                             placeholder="New password"
                             className="w-32 rounded bg-gray-800 border border-gray-700 px-2 py-1 text-xs text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                           />
-                          <button
-                            type="submit"
-                            className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
-                          >
-                            Save
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => { setResetId(null); setResetPassword('') }}
-                            className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
-                          >
-                            Cancel
-                          </button>
+                          <button type="submit" className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">Save</button>
+                          <button type="button" onClick={() => { setResetId(null); setResetPassword('') }} className="text-xs text-gray-500 hover:text-gray-300 transition-colors">Cancel</button>
                         </form>
                       ) : (
                         <button
@@ -233,7 +281,6 @@ export default function Accounts() {
                           Reset password
                         </button>
                       )}
-                      {/* Delete */}
                       {!isSelf && (
                         <button
                           onClick={() => handleDelete(user)}
