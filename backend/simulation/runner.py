@@ -140,7 +140,11 @@ class SimulationRunner:
         """Run simulation using PyFMI's CoupledFMUModelME2."""
         from pyfmi import load_fmu
 
-        from engine.fmu_utils import prepare_fmu_for_simulation
+        from engine.fmu_utils import prepare_fmu_for_simulation, setup_amesim_environment
+
+        # Ensure AMESim license env vars and $AME stub are configured
+        from app.config import settings
+        setup_amesim_environment(settings.TEMP_PATH, settings.AMESIM_LICENSE_SERVER)
 
         # Prepare and load FMU instances
         fmu_instances: dict[str, Any] = {}

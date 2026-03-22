@@ -29,6 +29,12 @@ services:
       - fmu-library:/opt/fmu-platform/fmu-library
       - projects:/opt/fmu-platform/projects
       - temp:/opt/fmu-platform/temp
+    environment:
+      # AMESim license server — needed when the API runs single-FMU test
+      # simulations (the test-run endpoint loads FMUs in-process).
+      SALT_LICENSE_SERVER: ${AMESIM_LICENSE_SERVER:-}
+      LMS_LICENSE: ${AMESIM_LICENSE_SERVER:-}
+      SIEMENS_LICENSE_FILE: ${AMESIM_LICENSE_SERVER:-}
     depends_on:
       postgres:
         condition: service_healthy

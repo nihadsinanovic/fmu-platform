@@ -346,32 +346,9 @@ def _run_fmu_test_sync(
 
     logger = logging.getLogger(__name__)
 
-    # Set AMESim license env vars so the FMU shared library can acquire a license
-    license_server = settings.AMESIM_LICENSE_SERVER or os.environ.get("SALT_LICENSE_SERVER", "")
-    if license_server:
-        os.environ["SALT_LICENSE_SERVER"] = license_server
-        os.environ["LMS_LICENSE"] = license_server
-        os.environ["SIEMENS_LICENSE_FILE"] = license_server
-        logger.info("License server set to: %s", license_server)
-    else:
-        logger.warning("No license server configured — FMU may fail if it requires a license")
-
-    # Set $AME to a minimal stub directory if not already set.
-    # AMESim FMUs reference $AME/AME.units and $AME/libth/data/materials/*.data
-    # for unit conversion and material properties.  Without the full AMESim
-    # installation we provide a stub so the FMU doesn't abort on missing paths.
-    if not os.environ.get("AME"):
-        ame_stub = settings.TEMP_PATH / "ame_stub"
-        ame_stub.mkdir(parents=True, exist_ok=True)
-        # Create a minimal AME.units file (empty is fine — suppresses the error)
-        units_file = ame_stub / "AME.units"
-        if not units_file.exists():
-            units_file.write_text("; minimal AME.units stub\n", encoding="utf-8")
-        # Create libth/data/materials directory for material lookups
-        materials_dir = ame_stub / "libth" / "data" / "materials"
-        materials_dir.mkdir(parents=True, exist_ok=True)
-        os.environ["AME"] = str(ame_stub)
-        logger.info("Set $AME to stub directory: %s", ame_stub)
+    # Set AMESim license env vars and $AME stub directory
+    from engine.fmu_utils import setup_amesim_environment
+    setup_amesim_environment(settings.TEMP_PATH, settings.AMESIM_LICENSE_SERVER)
 
     try:
         from pyfmi import load_fmu  # type: ignore[import]
@@ -438,6 +415,19 @@ def _run_fmu_test_sync(
             except Exception:
                 fmu_log = "(could not retrieve FMU log)"
             logger.error("model.simulate failed: %s\nFMU log:\n%s", sim_exc, fmu_log)
+
+            # Detect AMESim license failure and return a clearer message
+            if "lic_init failed" in fmu_log or "Checkout failed" in fmu_log:
+                license_server = os.environ.get("SALT_LICENSE_SERVER", "(not set)")
+                raise RuntimeError(
+                    f"AMESim license checkout failed. The FMU requires a valid "
+                    f"Simcenter AMESim license to run.\n\n"
+                    f"License server: {license_server}\n"
+                    f"Verify that AMESIM_LICENSE_SERVER is set correctly in .env "
+                    f"and that the license server is reachable from this host.\n\n"
+                    f"FMU log:\n{fmu_log}"
+                ) from sim_exc
+
             raise RuntimeError(
                 f"model.simulate failed: {sim_exc}\n\nFMU log:\n{fmu_log}"
             ) from sim_exc

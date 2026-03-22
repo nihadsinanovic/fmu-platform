@@ -20,6 +20,10 @@ services:
       - staging-fmu-library:/opt/fmu-platform/fmu-library
       - staging-projects:/opt/fmu-platform/projects
       - staging-temp:/opt/fmu-platform/temp
+    environment:
+      SALT_LICENSE_SERVER: ${AMESIM_LICENSE_SERVER:-}
+      LMS_LICENSE: ${AMESIM_LICENSE_SERVER:-}
+      SIEMENS_LICENSE_FILE: ${AMESIM_LICENSE_SERVER:-}
     depends_on:
       postgres-staging:
         condition: service_healthy

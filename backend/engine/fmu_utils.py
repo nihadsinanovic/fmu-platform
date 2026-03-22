@@ -199,6 +199,48 @@ def patch_fmu(
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+def setup_amesim_environment(temp_path: Path, license_server: str = "") -> None:
+    """Ensure AMESim license env vars and $AME stub are configured.
+
+    This must be called before loading any AMESim FMU so the shared library
+    can find its license server and unit/material files.
+
+    Args:
+        temp_path: Base temp directory (settings.TEMP_PATH) where the
+                   ``ame_stub`` directory will be created.
+        license_server: Value for ``AMESIM_LICENSE_SERVER`` (e.g.
+                        ``"29000@16.16.200.137"``).  If empty, the function
+                        still tries ``os.environ["SALT_LICENSE_SERVER"]``.
+    """
+    # ── license env vars ──────────────────────────────────────────────
+    server = license_server or os.environ.get("SALT_LICENSE_SERVER", "")
+    if server:
+        os.environ["SALT_LICENSE_SERVER"] = server
+        os.environ["LMS_LICENSE"] = server
+        os.environ["SIEMENS_LICENSE_FILE"] = server
+        logger.info("AMESim license server set to: %s", server)
+    else:
+        logger.warning(
+            "No AMESim license server configured — FMU may fail if it requires a license"
+        )
+
+    # ── $AME stub directory ───────────────────────────────────────────
+    if not os.environ.get("AME"):
+        ame_stub = temp_path / "ame_stub"
+        ame_stub.mkdir(parents=True, exist_ok=True)
+
+        # Minimal AME.units (suppresses "Can't read $AME/AME.units" warning)
+        units_file = ame_stub / "AME.units"
+        if not units_file.exists():
+            units_file.write_text("; minimal AME.units stub\n", encoding="utf-8")
+
+        # Material lookup directory
+        (ame_stub / "libth" / "data" / "materials").mkdir(parents=True, exist_ok=True)
+
+        os.environ["AME"] = str(ame_stub)
+        logger.info("Set $AME to stub directory: %s", ame_stub)
+
+
 def prepare_fmu_for_simulation(fmu_path: Path, work_dir: Path) -> Path:
     """Prepare an FMU for simulation — patch and copy to work directory.
 
