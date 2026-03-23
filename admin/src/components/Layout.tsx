@@ -55,20 +55,16 @@ export default function Layout() {
   const visibleNavItems = navItems.filter((item) => !item.adminOnly || isAdmin)
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-950">
+    <div className="flex h-screen overflow-hidden bg-off-white">
       {/* ── Mobile top bar ── */}
-      <div className="md:hidden fixed top-0 left-0 right-0 z-50 h-14 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-4 flex-shrink-0">
+      <div className="md:hidden fixed top-0 left-0 right-0 z-50 h-14 bg-white border-b border-beige flex items-center justify-between px-4 flex-shrink-0">
         <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center flex-shrink-0">
-            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23-.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5" />
-            </svg>
-          </div>
-          <p className="text-sm font-semibold text-white">FMU Platform</p>
+          <img src="/admin/qvantum-symbol.png" alt="Qvantum" className="w-7 h-7 flex-shrink-0" />
+          <p className="text-sm font-semibold text-off-black">FMU Platform</p>
         </div>
         <button
           onClick={() => setSidebarOpen((v) => !v)}
-          className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
+          className="p-2 text-brown hover:text-off-black hover:bg-beige rounded-lg transition-colors"
           aria-label="Toggle menu"
         >
           {sidebarOpen ? (
@@ -86,7 +82,7 @@ export default function Layout() {
       {/* ── Mobile sidebar backdrop ── */}
       {sidebarOpen && (
         <div
-          className="md:hidden fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
+          className="md:hidden fixed inset-0 z-40 bg-off-black/20 backdrop-blur-sm"
           onClick={() => setSidebarOpen(false)}
         />
       )}
@@ -95,21 +91,17 @@ export default function Layout() {
       <aside
         className={`
           fixed md:static inset-y-0 left-0 z-40
-          w-60 flex-shrink-0 flex flex-col bg-gray-900 border-r border-gray-800
+          w-60 flex-shrink-0 flex flex-col bg-white border-r border-beige
           transition-transform duration-200 md:transition-none md:translate-x-0
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
         `}
       >
         {/* Logo / title */}
-        <div className="flex items-center gap-3 px-5 py-5 border-b border-gray-800">
-          <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center flex-shrink-0">
-            <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23-.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5" />
-            </svg>
-          </div>
+        <div className="flex items-center gap-3 px-5 py-5 border-b border-beige">
+          <img src="/admin/qvantum-symbol.png" alt="Qvantum" className="w-8 h-8 flex-shrink-0" />
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-white truncate">FMU Platform</p>
-            <p className="text-xs text-gray-500">Admin Panel</p>
+            <p className="text-sm font-semibold text-off-black truncate">FMU Platform</p>
+            <p className="text-xs text-brown">Admin Panel</p>
           </div>
         </div>
 
@@ -123,8 +115,8 @@ export default function Layout() {
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                   isActive
-                    ? 'bg-indigo-600/20 text-indigo-400 ring-1 ring-indigo-600/40'
-                    : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
+                    ? 'bg-navy/10 text-navy ring-1 ring-navy/20'
+                    : 'text-brown hover:text-off-black hover:bg-beige/60'
                 }`
               }
             >
@@ -135,12 +127,12 @@ export default function Layout() {
         </nav>
 
         {/* Footer */}
-        <div className="px-5 py-4 border-t border-gray-800 space-y-3">
+        <div className="px-5 py-4 border-t border-beige space-y-3">
           <a
             href="/docs"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2 text-xs text-gray-500 hover:text-gray-300 transition-colors"
+            className="flex items-center gap-2 text-xs text-brown hover:text-off-black transition-colors"
           >
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
@@ -148,10 +140,10 @@ export default function Layout() {
             API Docs
           </a>
           <div className="flex items-center justify-between">
-            <span className="text-xs text-gray-500 truncate">{username}</span>
+            <span className="text-xs text-brown truncate">{username}</span>
             <button
               onClick={logout}
-              className="text-xs text-gray-500 hover:text-red-400 transition-colors"
+              className="text-xs text-brown hover:text-red transition-colors"
             >
               Sign out
             </button>
