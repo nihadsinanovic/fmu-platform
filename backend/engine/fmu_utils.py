@@ -318,10 +318,13 @@ def _normalize_data_file_for_injection(src: Path, dest: Path) -> bool:
         modified = True
         logger.info("Normalized line endings in %s", src.name)
 
-    # Process line-by-line: strip comments, remove blanks, strip trailing ws
+    # Process line-by-line: strip comments, remove blanks, strip trailing ws,
+    # and convert tabs to spaces.
     # AMESim's SIGUDA01 submodel may not recognize ';' as a comment prefix.
     # Safest approach: remove ALL comment lines — they're human metadata,
     # not needed by the FMU binary at runtime.
+    # Also convert tabs to spaces — AMESim's format detector may not
+    # recognize tab-separated headers (e.g. "8760\t4" → "8760 4").
     text = raw.decode("utf-8", errors="replace")
     lines = text.split("\n")
     out_lines: list[str] = []
@@ -336,11 +339,14 @@ def _normalize_data_file_for_injection(src: Path, dest: Path) -> bool:
             blanks_removed += 1
             continue
 
-        # Remove comment lines entirely — AMESim's table reader may not
-        # support ';' comments (only "'" in some submodels like SIGUDA01)
+        # Remove comment lines entirely
         if stripped.startswith(";") or stripped.startswith("'"):
             comments_removed += 1
             continue
+
+        # Convert tabs to spaces — AMESim's format parser may only
+        # recognize space-separated values in the header line
+        stripped = stripped.replace("\t", " ")
 
         out_lines.append(stripped)
 
