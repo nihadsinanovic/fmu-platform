@@ -318,18 +318,20 @@ def _normalize_data_file_for_injection(src: Path, dest: Path) -> bool:
         modified = True
         logger.info("Normalized line endings in %s", src.name)
 
-    # Process line-by-line: strip comments, remove blanks, strip trailing ws,
-    # and convert tabs to spaces.
-    # AMESim's SIGUDA01 submodel may not recognize ';' as a comment prefix.
-    # Safest approach: remove ALL comment lines — they're human metadata,
-    # not needed by the FMU binary at runtime.
-    # Also convert tabs to spaces — AMESim's format detector may not
-    # recognize tab-separated headers (e.g. "8760\t4" → "8760 4").
+    # Process line-by-line for AMESim runtime compatibility:
+    # 1. Strip comment lines (SIGUDA01 doesn't support ';' comments)
+    # 2. Remove blank lines
+    # 3. Strip the "npoints nvars" header line — AMESim's UD reader
+    #    auto-detects format from raw data; the header is misread as
+    #    a data row, causing "Undetermined format" errors
+    # 4. Convert tabs to spaces
+    # 5. Strip trailing whitespace
     text = raw.decode("utf-8", errors="replace")
     lines = text.split("\n")
     out_lines: list[str] = []
     blanks_removed = 0
     comments_removed = 0
+    header_removed = False
 
     for line in lines:
         stripped = line.rstrip()
@@ -344,9 +346,31 @@ def _normalize_data_file_for_injection(src: Path, dest: Path) -> bool:
             comments_removed += 1
             continue
 
-        # Convert tabs to spaces — AMESim's format parser may only
-        # recognize space-separated values in the header line
+        # Convert tabs to spaces
         stripped = stripped.replace("\t", " ")
+
+        # Detect and remove "npoints nvars" header line.
+        # AMESim's UD/SIGUDA01 reader auto-detects the table format
+        # from the data rows. A header line like "8760 4" is mistaken
+        # for a data row with 2 columns, causing format confusion.
+        # We detect the header as: first non-comment line has exactly
+        # 1-2 integer tokens that don't look like data values.
+        if not out_lines and not header_removed:
+            parts = stripped.split()
+            if len(parts) <= 2:
+                try:
+                    vals = [int(p) for p in parts]
+                    # Looks like a header (1-2 integers) — skip it
+                    header_removed = True
+                    logger.info(
+                        "Stripped header line %r from %s (AMESim UD reader "
+                        "auto-detects format; header confuses it)",
+                        stripped,
+                        src.name,
+                    )
+                    continue
+                except ValueError:
+                    pass  # Not all integers — treat as data
 
         out_lines.append(stripped)
 
@@ -361,6 +385,9 @@ def _normalize_data_file_for_injection(src: Path, dest: Path) -> bool:
             comments_removed,
             src.name,
         )
+
+    if header_removed:
+        modified = True
 
     result_bytes = ("\n".join(out_lines) + "\n").encode("utf-8")
 
