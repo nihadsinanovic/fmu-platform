@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database import get_db
 from app.models.fmu_library import FMULibrary
-from engine.fmu_utils import inspect_fmu, repair_amesim_data_file, validate_amesim_data_file
+from engine.fmu_utils import inspect_fmu, validate_amesim_data_file
 
 router = APIRouter(prefix="/api/fmu-library", tags=["fmu-library"])
 
@@ -255,7 +255,6 @@ async def upload_resource(
     simulation time.
 
     For AMESim .data files, the format is validated (but not modified).
-    Use the PATCH endpoint to apply repairs if needed.
     """
     result = await db.execute(
         select(FMULibrary).where(FMULibrary.type_name == type_name)
@@ -355,77 +354,6 @@ async def delete_resource(
     return {"message": f"Deleted '{filename}'"}
 
 
-@router.patch("/{type_name}/resources/{filename}/repair")
-async def repair_resource(
-    type_name: str,
-    filename: str,
-    db: AsyncSession = Depends(get_db),
-):
-    """Repair an AMESim .data file by adding the missing table header.
-
-    AMESim's table reader requires the first non-comment line to be
-    ``npoints\\tnvars`` (e.g. ``8760\\t4``). If this header is missing,
-    the FMU will fail during initialization with "Undetermined format".
-
-    This endpoint adds the header in-place based on the actual data
-    dimensions detected in the file. Only .data files are supported.
-    """
-    if not filename.endswith(".data"):
-        raise HTTPException(status_code=400, detail="Only .data files can be repaired")
-
-    result = await db.execute(
-        select(FMULibrary).where(FMULibrary.type_name == type_name)
-    )
-    fmu_record = result.scalar_one_or_none()
-    if not fmu_record:
-        raise HTTPException(status_code=404, detail=f"FMU type '{type_name}' not found")
-
-    fmu_dir = Path(fmu_record.fmu_path).parent
-    file_path = fmu_dir / "data" / filename
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail=f"Data file '{filename}' not found")
-
-    validation = repair_amesim_data_file(file_path)
-
-    if not validation.valid:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Cannot repair: {validation.error}",
-        )
-
-    if not validation.repaired:
-        return {
-            "message": "File already has a valid AMESim table header. No changes made.",
-            "repaired": False,
-            "validation": {
-                "format_valid": validation.valid,
-                "has_header": validation.has_header,
-                "n_points": validation.n_points,
-                "n_vars": validation.n_vars,
-                "n_columns": validation.n_columns,
-                "error": None,
-            },
-        }
-
-    return {
-        "message": (
-            f"Repaired: added AMESim table header "
-            f"'{validation.n_points}\\t{validation.n_vars}' "
-            f"({validation.n_points} data points, {validation.n_vars} "
-            f"variable{'s' if validation.n_vars != 1 else ''} + time column)."
-        ),
-        "repaired": True,
-        "validation": {
-            "format_valid": validation.valid,
-            "has_header": validation.has_header,
-            "n_points": validation.n_points,
-            "n_vars": validation.n_vars,
-            "n_columns": validation.n_columns,
-            "error": None,
-        },
-    }
-
-
 # ── FMU Test Run ───────────────────────────────────────────────────────
 
 
@@ -490,37 +418,6 @@ def _run_fmu_test_sync(
             raise RuntimeError(f"load_fmu failed: {exc}") from exc
         logger.info("FMU loaded successfully")
 
-        # Inspect extracted FMU resources directory for diagnostics
-        # Parse AMESim working directory from the FMU log
-        import re
-        amesim_res_dir = None
-        try:
-            fmu_init_log = "\n".join(model.get_log())
-            m = re.search(r"working directory set to (.+)", fmu_init_log)
-            if m:
-                amesim_res_dir = Path(m.group(1).strip())
-                logger.info("AMESim resources dir: %s", amesim_res_dir)
-                if amesim_res_dir.exists():
-                    res_files = list(amesim_res_dir.iterdir())
-                    logger.info(
-                        "Files in AMESim resources dir: %s",
-                        [(f.name, f.stat().st_size) for f in res_files],
-                    )
-                    # Log first bytes of .data files in the extracted dir
-                    for rf in res_files:
-                        if rf.suffix == ".data":
-                            head = rf.read_bytes()[:300]
-                            logger.info(
-                                "  %s first 300 bytes: %r", rf.name, head
-                            )
-                else:
-                    logger.warning(
-                        "AMESim resources dir does NOT exist: %s",
-                        amesim_res_dir,
-                    )
-        except Exception as log_exc:
-            logger.warning("Could not inspect FMU extraction: %s", log_exc)
-
         # Build a constant input trajectory (two time points, same values)
         input_arg = None
         if inputs:
@@ -573,49 +470,15 @@ def _run_fmu_test_sync(
                 if data_dir.exists():
                     for df in data_dir.iterdir():
                         if df.is_file():
-                            try:
-                                first_line = df.read_text(
-                                    encoding="utf-8", errors="replace"
-                                ).splitlines()[0][:100]
-                            except Exception:
-                                first_line = "(unreadable)"
                             data_files_info.append(
-                                f"  {df.name} ({df.stat().st_size} bytes) "
-                                f"first line: {first_line!r}"
+                                f"  {df.name} ({df.stat().st_size} bytes)"
                             )
                 files_detail = "\n".join(data_files_info) if data_files_info else "  (none)"
-
-                # Inspect AMESim's actual resources directory
-                amesim_detail = ""
-                m = re.search(r"working directory set to (.+)", fmu_log)
-                if m:
-                    res_path = Path(m.group(1).strip())
-                    if res_path.exists():
-                        res_listing = []
-                        for rf in sorted(res_path.iterdir()):
-                            if rf.is_file():
-                                info = f"    {rf.name} ({rf.stat().st_size} bytes)"
-                                if rf.suffix == ".data":
-                                    head = rf.read_bytes()[:200]
-                                    info += f"\n      first bytes: {head!r}"
-                                res_listing.append(info)
-                        amesim_detail = (
-                            f"\n\nAMESim resources dir ({res_path}):\n"
-                            + "\n".join(res_listing)
-                            if res_listing
-                            else f"\n\nAMESim resources dir ({res_path}): EMPTY"
-                        )
-                    else:
-                        amesim_detail = (
-                            f"\n\nAMESim resources dir ({res_path}): "
-                            f"DOES NOT EXIST"
-                        )
 
                 raise RuntimeError(
                     f"AMESim data file error. The FMU could not read a "
                     f"required .data file.\n\n"
-                    f"Data files on disk (source):\n{files_detail}"
-                    f"{amesim_detail}\n\n"
+                    f"Data files on disk:\n{files_detail}\n\n"
                     f"FMU log:\n{fmu_log}"
                 ) from sim_exc
 

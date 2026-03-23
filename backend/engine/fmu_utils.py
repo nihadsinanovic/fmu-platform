@@ -378,11 +378,6 @@ def _normalize_data_file_for_injection(src: Path, dest: Path) -> bool:
         modified = True
 
     result_bytes = ("\n".join(out_lines) + "\n").encode("utf-8")
-
-    # Log first few lines of normalized output for diagnostics
-    for i, line in enumerate(out_lines[:5]):
-        logger.info("  %s normalized line %d: %r", src.name, i + 1, line[:120])
-
     dest.write_bytes(result_bytes)
 
     if modified:
@@ -408,14 +403,14 @@ def _is_comment_line(line: str) -> bool:
 def validate_amesim_data_file(file_path: Path) -> DataFileValidation:
     """Validate an AMESim .data file and check its format.
 
-    AMESim table files have the format:
-        ; optional comment lines (start with ; or ')
-        npoints  nvars
-        t1  v1  v2  ...
-        t2  v1  v2  ...
+    AMESim SIGUDA01 expects simple tab-separated data with no header::
 
-    Where npoints is the number of data rows and nvars is the number of
-    value columns (excluding the time column).
+        t1\\tv1
+        t2\\tv2
+
+    Some files may include optional comment lines (starting with ; or ')
+    and/or a ``npoints [nvars]`` header line.  These are stripped during
+    injection normalization but are not treated as errors here.
 
     Returns a DataFileValidation with details about the file.
     """
@@ -530,53 +525,11 @@ def validate_amesim_data_file(file_path: Path) -> DataFileValidation:
             )
             return result
 
-    # File is only fully valid if it has a correct header
-    # (without the header, AMESim will fail with "Undetermined format")
-    result.valid = result.has_header
+    # File is valid if data rows are consistent (header is optional —
+    # AMESim's SIGUDA01 reader works without headers)
+    result.valid = True
     return result
 
-
-def repair_amesim_data_file(file_path: Path) -> DataFileValidation:
-    """Validate and repair an AMESim .data file in-place.
-
-    If the file is missing the required npoints/nvars header line,
-    add it. This makes the file parseable by AMESim's table reader.
-
-    Returns the validation result (with repaired=True if the file was fixed).
-    """
-    validation = validate_amesim_data_file(file_path)
-
-    if validation.has_header:
-        # Already has a proper header — nothing to repair
-        return validation
-
-    if validation.error:
-        # File has structural issues that can't be auto-repaired
-        return validation
-
-    # File has valid data but is missing header — add it
-    text = file_path.read_text(encoding="utf-8", errors="replace")
-    lines = text.splitlines(keepends=True)
-
-    # Build header line: npoints nvars (nvars = total_columns - 1 for time)
-    header = f"{validation.n_points}\t{validation.n_vars}\n"
-
-    # Insert header after any comment lines
-    insert_pos = validation.n_comment_lines
-    lines.insert(insert_pos, header)
-
-    file_path.write_text("".join(lines), encoding="utf-8")
-
-    validation.has_header = True
-    validation.valid = True
-    validation.repaired = True
-    logger.info(
-        "Repaired AMESim data file %s: added header (%d points, %d vars)",
-        file_path.name,
-        validation.n_points,
-        validation.n_vars,
-    )
-    return validation
 
 
 def prepare_fmu_for_simulation(fmu_path: Path, work_dir: Path) -> Path:
@@ -604,60 +557,25 @@ def prepare_fmu_for_simulation(fmu_path: Path, work_dir: Path) -> Path:
     for warning in inspection.warnings:
         logger.warning("FMU %s: %s", fmu_path.name, warning)
 
-    # Check what resources the FMU already has bundled
-    if inspection.bundled_resources:
-        logger.info(
-            "FMU %s already has bundled resources: %s",
-            fmu_path.name,
-            inspection.bundled_resources,
-        )
-        # Log first bytes of any .data files already in the FMU
-        with zipfile.ZipFile(fmu_path, "r") as zf:
-            for res_name in inspection.bundled_resources:
-                if res_name.endswith(".data"):
-                    with zf.open(f"resources/{res_name}") as zentry:
-                        head = zentry.read(500)
-                        logger.info(
-                            "  ORIGINAL %s in FMU (%d bytes total): %r",
-                            res_name,
-                            zf.getinfo(f"resources/{res_name}").file_size,
-                            head[:300],
-                        )
-
     # Collect data files to inject into resources/
-    # IMPORTANT: skip files that already exist in the FMU's resources —
-    # the FMU was exported with the correct format for its submodels.
+    # Skip files that already exist in the FMU's bundled resources.
     bundled_set = set(inspection.bundled_resources)
     data_dir = fmu_path.parent / "data"
     inject_resources: dict[str, Path] = {}
-    # Temp dir for normalized copies of .data files (cleaned up later)
     norm_dir: Path | None = None
     if data_dir.exists():
         for f in data_dir.iterdir():
             if f.is_file():
-                # Skip files already bundled in the FMU — the original
-                # format is what the FMU binary expects
                 if f.name in bundled_set:
-                    logger.info(
-                        "Skipping injection of %s — already bundled in FMU",
-                        f.name,
-                    )
+                    logger.info("Skipping %s — already bundled in FMU", f.name)
                     continue
 
-                # Validate .data files and warn if issues are detected
                 if f.suffix == ".data":
                     validation = validate_amesim_data_file(f)
-                    if not validation.has_header:
-                        logger.warning(
-                            "Data file %s is missing the AMESim table header "
-                            "(npoints\\tnvars). The FMU will likely fail with "
-                            "'Undetermined format'. Use the admin panel to repair it.",
-                            f.name,
-                        )
                     if validation.error:
-                        logger.warning("Data file %s has issues: %s", f.name, validation.error)
+                        logger.warning("Data file %s: %s", f.name, validation.error)
 
-                    # Normalize .data files (BOM, line endings) for Linux runtime
+                    # Normalize .data files for AMESim runtime
                     if norm_dir is None:
                         norm_dir = Path(tempfile.mkdtemp(prefix="fmu_norm_"))
                     norm_path = norm_dir / f.name
@@ -666,26 +584,7 @@ def prepare_fmu_for_simulation(fmu_path: Path, work_dir: Path) -> Path:
                 else:
                     inject_resources[f.name] = f
 
-                size = f.stat().st_size
-                logger.info(
-                    "Will inject data file into FMU resources: %s (%d bytes)",
-                    f.name,
-                    size,
-                )
-                # Log first bytes and lines of .data files for diagnostics
-                if f.suffix == ".data":
-                    try:
-                        raw_bytes = f.read_bytes()[:20]
-                        logger.info("  %s first bytes: %r", f.name, raw_bytes)
-                        first_lines = f.read_text(
-                            encoding="utf-8", errors="replace"
-                        ).splitlines()[:3]
-                        for i, line in enumerate(first_lines):
-                            logger.info("  %s line %d: %r", f.name, i + 1, line[:120])
-                    except Exception:
-                        pass
-    else:
-        logger.info("No data/ directory found next to FMU: %s", fmu_path)
+                logger.info("Will inject %s (%d bytes)", f.name, f.stat().st_size)
 
     needs_patch = inspection.needs_execution_tool or bool(inject_resources)
 
@@ -711,32 +610,13 @@ def prepare_fmu_for_simulation(fmu_path: Path, work_dir: Path) -> Path:
                 for filename in inject_resources:
                     arcname = f"resources/{filename}"
                     if arcname not in zf.namelist():
-                        logger.error(
-                            "VERIFICATION FAILED: %s not found in patched FMU ZIP",
-                            arcname,
-                        )
+                        logger.error("Injection failed: %s missing from FMU ZIP", arcname)
                     else:
-                        info = zf.getinfo(arcname)
-                        logger.info(
-                            "Verified %s in FMU ZIP: %d bytes (compressed: %d)",
-                            arcname,
-                            info.file_size,
-                            info.compress_size,
-                        )
-                        if info.file_size == 0:
-                            logger.error(
-                                "VERIFICATION FAILED: %s is empty in FMU ZIP!",
-                                arcname,
-                            )
-                        # Log first bytes of the injected file from the ZIP
-                        if filename.endswith(".data"):
-                            with zf.open(arcname) as zentry:
-                                head = zentry.read(200)
-                                logger.info(
-                                    "  %s in ZIP starts with: %r",
-                                    arcname,
-                                    head[:100],
-                                )
+                        size = zf.getinfo(arcname).file_size
+                        if size == 0:
+                            logger.error("Injection failed: %s is empty in FMU ZIP", arcname)
+                        else:
+                            logger.info("Verified %s in FMU ZIP (%d bytes)", arcname, size)
 
         return result
     finally:
