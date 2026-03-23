@@ -1,4 +1,4 @@
-import type { FMUListItem, FMUDetail, FMUUploadResponse, FMUTestRunRequest, FMUTestRunResult, Job, JobStatusDetail, ResultsData, RepairResourceResponse, DataFileEntry } from './types'
+import type { FMUListItem, FMUDetail, FMUUploadResponse, FMUTestRunRequest, FMUTestRunResult, Job, JobStatusDetail, ResultsData, DataFileEntry } from './types'
 
 const BASE = ''
 const STORAGE_KEY = 'fmu_auth'
@@ -87,12 +87,6 @@ export async function listResources(typeName: string): Promise<{ type_name: stri
 export async function deleteResource(typeName: string, filename: string): Promise<{ message: string }> {
   return request(`/api/fmu-library/${encodeURIComponent(typeName)}/resources/${encodeURIComponent(filename)}`, {
     method: 'DELETE',
-  })
-}
-
-export async function repairResource(typeName: string, filename: string): Promise<RepairResourceResponse> {
-  return request(`/api/fmu-library/${encodeURIComponent(typeName)}/resources/${encodeURIComponent(filename)}/repair`, {
-    method: 'PATCH',
   })
 }
 

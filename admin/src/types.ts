@@ -93,8 +93,3 @@ export interface DataFileEntry {
   validation?: DataFileValidation
 }
 
-export interface RepairResourceResponse {
-  message: string
-  repaired: boolean
-  validation: DataFileValidation
-}
