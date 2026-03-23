@@ -318,28 +318,29 @@ def _normalize_data_file_for_injection(src: Path, dest: Path) -> bool:
         modified = True
         logger.info("Normalized line endings in %s", src.name)
 
-    # Process line-by-line: remove blanks, sanitize comments, strip trailing ws
+    # Process line-by-line: strip comments, remove blanks, strip trailing ws
+    # AMESim's SIGUDA01 submodel may not recognize ';' as a comment prefix.
+    # Safest approach: remove ALL comment lines — they're human metadata,
+    # not needed by the FMU binary at runtime.
     text = raw.decode("utf-8", errors="replace")
     lines = text.split("\n")
     out_lines: list[str] = []
     blanks_removed = 0
-    comments_sanitized = 0
+    comments_removed = 0
 
     for line in lines:
         stripped = line.rstrip()
 
-        # Remove blank/empty lines — AMESim's parser can misinterpret them
+        # Remove blank/empty lines
         if not stripped:
             blanks_removed += 1
             continue
 
-        # Sanitize comment lines: replace non-ASCII chars with '?'
-        # AMESim's C reader may choke on multi-byte UTF-8 in comments
+        # Remove comment lines entirely — AMESim's table reader may not
+        # support ';' comments (only "'" in some submodels like SIGUDA01)
         if stripped.startswith(";") or stripped.startswith("'"):
-            ascii_line = stripped.encode("ascii", errors="replace").decode("ascii")
-            if ascii_line != stripped:
-                comments_sanitized += 1
-                stripped = ascii_line
+            comments_removed += 1
+            continue
 
         out_lines.append(stripped)
 
@@ -347,11 +348,11 @@ def _normalize_data_file_for_injection(src: Path, dest: Path) -> bool:
         modified = True
         logger.info("Removed %d blank lines from %s", blanks_removed, src.name)
 
-    if comments_sanitized > 0:
+    if comments_removed > 0:
         modified = True
         logger.info(
-            "Sanitized %d comment lines (non-ASCII → ASCII) in %s",
-            comments_sanitized,
+            "Stripped %d comment lines from %s for runtime injection",
+            comments_removed,
             src.name,
         )
 
