@@ -27,30 +27,31 @@ function TestRunChart({ result }: { result: FMUTestRunResult }) {
 
       const layout = {
         paper_bgcolor: 'transparent',
-        plot_bgcolor: 'rgb(17, 24, 39)',
-        font: { color: '#9ca3af', size: 11, family: 'ui-monospace, monospace' },
+        plot_bgcolor: '#FFFFFF',
+        font: { color: '#232222', size: 11, family: '"Host Grotesk", system-ui, sans-serif' },
         xaxis: {
-          title: { text: 'Time (s)', font: { color: '#6b7280' } },
-          gridcolor: '#1f2937',
-          linecolor: '#374151',
-          tickcolor: '#374151',
-          zerolinecolor: '#374151',
+          title: { text: 'Time (s)', font: { color: '#91877A' } },
+          gridcolor: '#E5E6DF',
+          linecolor: '#E5E6DF',
+          tickcolor: '#91877A',
+          zerolinecolor: '#E5E6DF',
         },
         yaxis: {
-          gridcolor: '#1f2937',
-          linecolor: '#374151',
-          tickcolor: '#374151',
-          zerolinecolor: '#374151',
+          gridcolor: '#E5E6DF',
+          linecolor: '#E5E6DF',
+          tickcolor: '#91877A',
+          zerolinecolor: '#E5E6DF',
         },
         legend: {
-          bgcolor: 'rgba(17,24,39,0.8)',
-          bordercolor: '#374151',
+          bgcolor: 'rgba(255,255,255,0.9)',
+          bordercolor: '#E5E6DF',
           borderwidth: 1,
-          font: { color: '#d1d5db', size: 10 },
+          font: { color: '#232222', size: 10 },
         },
         margin: { t: 20, r: 20, b: 50, l: 60 },
         hovermode: 'x unified' as const,
-        hoverlabel: { bgcolor: '#1f2937', bordercolor: '#374151', font: { color: '#e5e7eb' } },
+        hoverlabel: { bgcolor: '#FFFFFF', bordercolor: '#E5E6DF', font: { color: '#232222' } },
+        colorway: ['#002656', '#3164FD', '#4AA1FF', '#C41230', '#FF8D5A', '#F7E36E', '#91877A'],
       }
 
       void Plotly.default.react(containerRef.current, traces, layout, {
@@ -171,15 +172,15 @@ export default function FMUDetail() {
       <div className="flex items-center gap-3 mb-6">
         <button
           onClick={() => navigate('/fmu-library')}
-          className="p-2 text-gray-500 hover:text-gray-300 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors flex-shrink-0"
+          className="p-2 text-brown hover:text-off-black bg-white hover:bg-beige border border-beige rounded-lg transition-colors flex-shrink-0"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
           </svg>
         </button>
         <div className="min-w-0">
-          <p className="text-xs text-gray-500">FMU Library</p>
-          <h1 className="text-xl font-bold text-white font-mono truncate">{typeName}</h1>
+          <p className="text-xs text-brown">FMU Library</p>
+          <h1 className="text-xl font-bold text-off-black font-mono truncate">{typeName}</h1>
         </div>
       </div>
 
@@ -187,14 +188,14 @@ export default function FMUDetail() {
       {loading && (
         <div className="space-y-4">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="h-24 bg-gray-800/50 rounded-xl animate-pulse" />
+            <div key={i} className="h-24 bg-beige/50 rounded-xl animate-pulse" />
           ))}
         </div>
       )}
 
       {/* Error */}
       {error && (
-        <div className="bg-rose-950/60 border border-rose-800 rounded-lg px-4 py-3 text-sm text-rose-300">
+        <div className="bg-red/5 border border-red/20 rounded-lg px-4 py-3 text-sm text-red">
           {error}
         </div>
       )}
@@ -202,8 +203,8 @@ export default function FMUDetail() {
       {manifest && (
         <div className="space-y-5">
           {/* ── Metadata ── */}
-          <section className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">Metadata</h2>
+          <section className="bg-white border border-beige rounded-xl p-5">
+            <h2 className="text-xs font-semibold text-brown uppercase tracking-wider mb-4">Metadata</h2>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {([
                 ['FMI Version', manifest.fmi_version],
@@ -211,58 +212,58 @@ export default function FMUDetail() {
                 ['Version', manifest.version],
                 ['Generation Tool', manifest.generation_tool],
               ] as [string, string][]).map(([label, value]) => (
-                <div key={label} className="bg-gray-800 rounded-lg px-3 py-2.5">
-                  <p className="text-xs text-gray-500 mb-0.5">{label}</p>
-                  <p className="text-sm text-gray-200 font-medium truncate">{value || '—'}</p>
+                <div key={label} className="bg-off-white rounded-lg px-3 py-2.5">
+                  <p className="text-xs text-brown mb-0.5">{label}</p>
+                  <p className="text-sm text-off-black font-medium truncate">{value || '—'}</p>
                 </div>
               ))}
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
-              <div className="bg-gray-800/60 rounded-lg px-3 py-2">
-                <p className="text-xs text-gray-500 mb-0.5">Model Identifier</p>
-                <p className="text-xs font-mono text-gray-300 break-all">{manifest.model_identifier || '—'}</p>
+              <div className="bg-off-white rounded-lg px-3 py-2">
+                <p className="text-xs text-brown mb-0.5">Model Identifier</p>
+                <p className="text-xs font-mono text-off-black break-all">{manifest.model_identifier || '—'}</p>
               </div>
-              <div className="bg-gray-800/60 rounded-lg px-3 py-2">
-                <p className="text-xs text-gray-500 mb-0.5">GUID</p>
-                <p className="text-xs font-mono text-gray-300 break-all">{manifest.guid || '—'}</p>
+              <div className="bg-off-white rounded-lg px-3 py-2">
+                <p className="text-xs text-brown mb-0.5">GUID</p>
+                <p className="text-xs font-mono text-off-black break-all">{manifest.guid || '—'}</p>
               </div>
             </div>
           </section>
 
           {/* ── Ports ── */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <section className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-              <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">
+            <section className="bg-white border border-beige rounded-xl p-5">
+              <h2 className="text-xs font-semibold text-brown uppercase tracking-wider mb-4">
                 Inputs ({manifest.inputs.length})
               </h2>
               {manifest.inputs.length === 0 ? (
-                <p className="text-gray-600 text-xs">No inputs</p>
+                <p className="text-brown/50 text-xs">No inputs</p>
               ) : (
                 <div className="space-y-2">
                   {manifest.inputs.map((p) => (
                     <div key={p.name} className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-indigo-400 flex-shrink-0" />
-                      <span className="text-xs font-mono text-indigo-300 truncate">{p.name}</span>
-                      <span className="text-xs text-gray-600 ml-auto flex-shrink-0">{p.type}</span>
+                      <span className="w-2 h-2 rounded-full bg-navy flex-shrink-0" />
+                      <span className="text-xs font-mono text-navy truncate">{p.name}</span>
+                      <span className="text-xs text-brown ml-auto flex-shrink-0">{p.type}</span>
                     </div>
                   ))}
                 </div>
               )}
             </section>
 
-            <section className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-              <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">
+            <section className="bg-white border border-beige rounded-xl p-5">
+              <h2 className="text-xs font-semibold text-brown uppercase tracking-wider mb-4">
                 Outputs ({manifest.outputs.length})
               </h2>
               {manifest.outputs.length === 0 ? (
-                <p className="text-gray-600 text-xs">No outputs</p>
+                <p className="text-brown/50 text-xs">No outputs</p>
               ) : (
                 <div className="space-y-2">
                   {manifest.outputs.map((p) => (
                     <div key={p.name} className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0" />
-                      <span className="text-xs font-mono text-emerald-300 truncate">{p.name}</span>
-                      <span className="text-xs text-gray-600 ml-auto flex-shrink-0">{p.type}</span>
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0" />
+                      <span className="text-xs font-mono text-emerald-700 truncate">{p.name}</span>
+                      <span className="text-xs text-brown ml-auto flex-shrink-0">{p.type}</span>
                     </div>
                   ))}
                 </div>
@@ -271,9 +272,9 @@ export default function FMUDetail() {
           </div>
 
           {/* ── Data Files ── */}
-          <section className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+          <section className="bg-white border border-beige rounded-xl p-5">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+              <h2 className="text-xs font-semibold text-brown uppercase tracking-wider">
                 Data Files ({dataFiles.length})
               </h2>
               <div className="flex items-center gap-2">
@@ -290,10 +291,10 @@ export default function FMUDetail() {
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   disabled={uploadingFile}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-300 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg transition-colors"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-off-black bg-off-white hover:bg-beige disabled:opacity-50 border border-beige rounded-lg transition-colors"
                 >
                   {uploadingFile ? (
-                    <div className="w-3 h-3 border-2 border-gray-500 border-t-gray-300 rounded-full animate-spin" />
+                    <div className="w-3 h-3 border-2 border-brown/30 border-t-brown rounded-full animate-spin" />
                   ) : (
                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
@@ -303,24 +304,24 @@ export default function FMUDetail() {
                 </button>
               </div>
             </div>
-            <p className="text-xs text-gray-600 mb-3">
+            <p className="text-xs text-brown mb-3">
               External data files (weather, lookup tables, etc.) are provided to the FMU at runtime. The FMU itself is never modified.
             </p>
             {dataLoading ? (
-              <div className="h-12 bg-gray-800/50 rounded-lg animate-pulse" />
+              <div className="h-12 bg-beige/50 rounded-lg animate-pulse" />
             ) : dataFiles.length === 0 ? (
-              <p className="text-gray-600 text-xs">No data files uploaded</p>
+              <p className="text-brown/50 text-xs">No data files uploaded</p>
             ) : (
               <div className="space-y-3">
                 {dataFiles.map((f) => (
                   <div key={f.name}>
-                    <div className="flex items-center gap-2 bg-gray-800/60 rounded-lg px-3 py-2">
-                      <svg className="w-4 h-4 text-gray-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <div className="flex items-center gap-2 bg-off-white rounded-lg px-3 py-2">
+                      <svg className="w-4 h-4 text-brown flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
                       </svg>
-                      <span className="text-xs font-mono text-gray-300 truncate">{f.name}</span>
+                      <span className="text-xs font-mono text-off-black truncate">{f.name}</span>
                       {f.validation && f.validation.format_valid && (
-                        <span className="flex items-center gap-1 text-xs text-emerald-400 flex-shrink-0">
+                        <span className="flex items-center gap-1 text-xs text-emerald-600 flex-shrink-0">
                           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                           </svg>
@@ -328,19 +329,19 @@ export default function FMUDetail() {
                         </span>
                       )}
                       {f.validation && !f.validation.format_valid && (
-                        <span className="flex items-center gap-1 text-xs text-amber-400 flex-shrink-0">
+                        <span className="flex items-center gap-1 text-xs text-amber-600 flex-shrink-0">
                           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
                           </svg>
                           Invalid format
                         </span>
                       )}
-                      <span className="text-xs text-gray-600 ml-auto flex-shrink-0">
+                      <span className="text-xs text-brown ml-auto flex-shrink-0">
                         {f.size_bytes < 1024 ? `${f.size_bytes} B` : `${(f.size_bytes / 1024).toFixed(1)} KB`}
                       </span>
                       <button
                         onClick={() => void handleDeleteDataFile(f.name)}
-                        className="p-1 text-gray-600 hover:text-rose-400 transition-colors flex-shrink-0"
+                        className="p-1 text-brown hover:text-red transition-colors flex-shrink-0"
                         title="Delete"
                       >
                         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -352,14 +353,14 @@ export default function FMUDetail() {
                     {/* Validation error for .data files */}
                     {f.validation && !f.validation.format_valid && f.validation.error && (
                       <div className="mt-1 px-3">
-                        <p className="text-xs text-amber-400/70">{f.validation.error}</p>
+                        <p className="text-xs text-amber-600/70">{f.validation.error}</p>
                       </div>
                     )}
 
                     {/* Valid file info */}
                     {f.validation && f.validation.format_valid && (
                       <div className="mt-1 px-3">
-                        <p className="text-xs text-gray-600">
+                        <p className="text-xs text-brown">
                           {f.validation.n_points} points, {f.validation.n_columns} column{f.validation.n_columns !== 1 ? 's' : ''}
                         </p>
                       </div>
@@ -371,17 +372,17 @@ export default function FMUDetail() {
           </section>
 
           {/* ── Test Run ── */}
-          <section className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-5">Test Run</h2>
+          <section className="bg-white border border-beige rounded-xl p-5">
+            <h2 className="text-xs font-semibold text-brown uppercase tracking-wider mb-5">Test Run</h2>
 
             {/* Input variables */}
             {manifest.inputs.length > 0 && (
               <div className="mb-5">
-                <p className="text-xs text-gray-500 mb-3">Input Values (constant throughout simulation)</p>
+                <p className="text-xs text-brown mb-3">Input Values (constant throughout simulation)</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {manifest.inputs.map((p) => (
                     <div key={p.name}>
-                      <label className="block text-xs font-medium text-indigo-400 mb-1 font-mono truncate">
+                      <label className="block text-xs font-medium text-navy mb-1 font-mono truncate">
                         {p.name}
                       </label>
                       <input
@@ -391,7 +392,7 @@ export default function FMUDetail() {
                         onChange={(e) =>
                           setInputValues((prev) => ({ ...prev, [p.name]: e.target.value }))
                         }
-                        className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-transparent"
+                        className="w-full bg-off-white border border-beige rounded-lg px-3 py-2 text-sm text-off-black focus:outline-none focus:ring-2 focus:ring-navy focus:border-transparent"
                       />
                     </div>
                   ))}
@@ -402,34 +403,34 @@ export default function FMUDetail() {
             {/* Simulation time controls */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
               <div>
-                <label className="block text-xs font-medium text-gray-400 mb-1">Start Time (s)</label>
+                <label className="block text-xs font-medium text-brown mb-1">Start Time (s)</label>
                 <input
                   type="number"
                   step="any"
                   value={startTime}
                   onChange={(e) => setStartTime(e.target.value)}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-transparent"
+                  className="w-full bg-off-white border border-beige rounded-lg px-3 py-2 text-sm text-off-black focus:outline-none focus:ring-2 focus:ring-navy focus:border-transparent"
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-400 mb-1">End Time (s)</label>
+                <label className="block text-xs font-medium text-brown mb-1">End Time (s)</label>
                 <input
                   type="number"
                   step="any"
                   value={endTime}
                   onChange={(e) => setEndTime(e.target.value)}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-transparent"
+                  className="w-full bg-off-white border border-beige rounded-lg px-3 py-2 text-sm text-off-black focus:outline-none focus:ring-2 focus:ring-navy focus:border-transparent"
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-400 mb-1">Communication Points</label>
+                <label className="block text-xs font-medium text-brown mb-1">Communication Points</label>
                 <input
                   type="number"
                   step="1"
                   min="1"
                   value={ncp}
                   onChange={(e) => setNcp(e.target.value)}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-transparent"
+                  className="w-full bg-off-white border border-beige rounded-lg px-3 py-2 text-sm text-off-black focus:outline-none focus:ring-2 focus:ring-navy focus:border-transparent"
                 />
               </div>
             </div>
@@ -438,7 +439,7 @@ export default function FMUDetail() {
             <button
               onClick={() => void handleRunTest()}
               disabled={runLoading}
-              className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed rounded-lg transition-colors"
+              className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-white bg-navy hover:bg-navy/90 disabled:opacity-60 disabled:cursor-not-allowed rounded-lg transition-colors"
             >
               {runLoading ? (
                 <>
@@ -457,7 +458,7 @@ export default function FMUDetail() {
 
             {/* Error */}
             {runError && (
-              <div className="mt-4 bg-rose-950/60 border border-rose-800 rounded-lg px-4 py-3 text-sm text-rose-300">
+              <div className="mt-4 bg-red/5 border border-red/20 rounded-lg px-4 py-3 text-sm text-red">
                 {runError}
               </div>
             )}
@@ -465,13 +466,13 @@ export default function FMUDetail() {
             {/* Results chart */}
             {runResult && !runLoading && (
               <div className="mt-6">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                <p className="text-xs font-semibold text-brown uppercase tracking-wider mb-3">
                   Results — {outputCount} output variable{outputCount !== 1 ? 's' : ''}
                 </p>
                 {outputCount === 0 ? (
-                  <p className="text-gray-600 text-sm">No output variables returned.</p>
+                  <p className="text-brown text-sm">No output variables returned.</p>
                 ) : (
-                  <div className="bg-gray-800/50 rounded-xl p-3 overflow-hidden">
+                  <div className="bg-off-white rounded-xl p-3 overflow-hidden">
                     <TestRunChart result={runResult} />
                   </div>
                 )}
