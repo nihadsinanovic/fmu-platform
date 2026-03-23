@@ -287,18 +287,21 @@ class DataFileValidation:
 
 
 def _normalize_data_file_for_injection(src: Path, dest: Path) -> bool:
-    """Normalize an AMESim .data file for Linux runtime compatibility.
+    """Normalize an AMESim .data file for runtime compatibility.
 
-    AMESim's C-based table reader is strict. This function normalizes the
-    file to avoid common issues that cause "Undetermined format" errors:
+    AMESim's SIGUDA01 (and similar UD submodels) expect a simple format:
+    tab-separated columns, no comments, no headers.  This function
+    normalizes files that may have been created with editors or tools
+    that add metadata the binary can't parse:
 
     1. Strips UTF-8 BOM (byte order mark)
     2. Converts Windows line endings (\\r\\n) to Unix (\\n)
-    3. Removes blank/empty lines (AMESim treats them as data boundaries)
-    4. Sanitizes comment lines to ASCII (non-ASCII chars like °, — can
-       confuse the C parser)
-    5. Strips trailing whitespace from every line
+    3. Removes blank/empty lines
+    4. Strips comment lines (starting with ';' or "'")
+    5. Strips "npoints [nvars]" header lines (integers-only first line)
+    6. Strips trailing whitespace from every line
 
+    Tab separators are preserved — AMESim uses tab-separated values.
     The original file on disk is NOT modified — only the injected copy.
 
     Returns True if the file was modified, False if already clean.
@@ -318,14 +321,7 @@ def _normalize_data_file_for_injection(src: Path, dest: Path) -> bool:
         modified = True
         logger.info("Normalized line endings in %s", src.name)
 
-    # Process line-by-line for AMESim runtime compatibility:
-    # 1. Strip comment lines (SIGUDA01 doesn't support ';' comments)
-    # 2. Remove blank lines
-    # 3. Strip the "npoints nvars" header line — AMESim's UD reader
-    #    auto-detects format from raw data; the header is misread as
-    #    a data row, causing "Undetermined format" errors
-    # 4. Convert tabs to spaces
-    # 5. Strip trailing whitespace
+    # Process line-by-line for AMESim runtime compatibility
     text = raw.decode("utf-8", errors="replace")
     lines = text.split("\n")
     out_lines: list[str] = []
@@ -341,30 +337,22 @@ def _normalize_data_file_for_injection(src: Path, dest: Path) -> bool:
             blanks_removed += 1
             continue
 
-        # Remove comment lines entirely
+        # Remove comment lines (SIGUDA01 doesn't support comments)
         if stripped.startswith(";") or stripped.startswith("'"):
             comments_removed += 1
             continue
 
-        # Convert tabs to spaces
-        stripped = stripped.replace("\t", " ")
-
-        # Detect and remove "npoints nvars" header line.
-        # AMESim's UD/SIGUDA01 reader auto-detects the table format
-        # from the data rows. A header line like "8760 4" is mistaken
-        # for a data row with 2 columns, causing format confusion.
-        # We detect the header as: first non-comment line has exactly
-        # 1-2 integer tokens that don't look like data values.
+        # Detect and remove "npoints [nvars]" header line.
+        # SIGUDA01 doesn't use headers — the first line must be data.
+        # A header like "8760 4" is misread as a data row.
         if not out_lines and not header_removed:
             parts = stripped.split()
             if len(parts) <= 2:
                 try:
                     vals = [int(p) for p in parts]
-                    # Looks like a header (1-2 integers) — skip it
                     header_removed = True
                     logger.info(
-                        "Stripped header line %r from %s (AMESim UD reader "
-                        "auto-detects format; header confuses it)",
+                        "Stripped header line %r from %s",
                         stripped,
                         src.name,
                     )
