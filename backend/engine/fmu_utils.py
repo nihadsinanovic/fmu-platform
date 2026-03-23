@@ -616,7 +616,30 @@ def prepare_fmu_for_simulation(fmu_path: Path, work_dir: Path) -> Path:
     for warning in inspection.warnings:
         logger.warning("FMU %s: %s", fmu_path.name, warning)
 
+    # Check what resources the FMU already has bundled
+    if inspection.bundled_resources:
+        logger.info(
+            "FMU %s already has bundled resources: %s",
+            fmu_path.name,
+            inspection.bundled_resources,
+        )
+        # Log first bytes of any .data files already in the FMU
+        with zipfile.ZipFile(fmu_path, "r") as zf:
+            for res_name in inspection.bundled_resources:
+                if res_name.endswith(".data"):
+                    with zf.open(f"resources/{res_name}") as zentry:
+                        head = zentry.read(500)
+                        logger.info(
+                            "  ORIGINAL %s in FMU (%d bytes total): %r",
+                            res_name,
+                            zf.getinfo(f"resources/{res_name}").file_size,
+                            head[:300],
+                        )
+
     # Collect data files to inject into resources/
+    # IMPORTANT: skip files that already exist in the FMU's resources —
+    # the FMU was exported with the correct format for its submodels.
+    bundled_set = set(inspection.bundled_resources)
     data_dir = fmu_path.parent / "data"
     inject_resources: dict[str, Path] = {}
     # Temp dir for normalized copies of .data files (cleaned up later)
@@ -624,6 +647,15 @@ def prepare_fmu_for_simulation(fmu_path: Path, work_dir: Path) -> Path:
     if data_dir.exists():
         for f in data_dir.iterdir():
             if f.is_file():
+                # Skip files already bundled in the FMU — the original
+                # format is what the FMU binary expects
+                if f.name in bundled_set:
+                    logger.info(
+                        "Skipping injection of %s — already bundled in FMU",
+                        f.name,
+                    )
+                    continue
+
                 # Validate .data files and warn if issues are detected
                 if f.suffix == ".data":
                     validation = validate_amesim_data_file(f)
