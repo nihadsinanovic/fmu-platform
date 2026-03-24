@@ -61,9 +61,24 @@ class FMUTestRunRequest(BaseModel):
     ncp: int = 100
 
 
+class FMUTestRunStats(BaseModel):
+    elapsed_seconds: float
+    n_time_steps: int
+    n_output_variables: int
+    n_data_points: int
+    simulation_time_span: float
+    n_state_variables: int | None = None
+    n_event_indicators: int | None = None
+    solver_name: str | None = None
+    n_steps: int | None = None
+    n_function_evaluations: int | None = None
+    n_jacobian_evaluations: int | None = None
+
+
 class FMUTestRunResult(BaseModel):
     time: list[float]
     outputs: dict[str, list[float]]
+    stats: FMUTestRunStats
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────
@@ -368,6 +383,7 @@ def _run_fmu_test_sync(
     """Run a single-FMU test simulation synchronously. Called from a thread pool."""
     import logging
     import os
+    import time as time_mod
 
     import numpy as np
 
@@ -428,10 +444,21 @@ def _run_fmu_test_sync(
             input_arg = (input_names, val_matrix)
             logger.info("Input trajectory built for variables: %s", input_names)
 
+        # Collect model info before simulation
+        n_state_variables = None
+        n_event_indicators = None
+        try:
+            ode_sizes = model.get_ode_sizes()
+            n_state_variables = ode_sizes[0] if len(ode_sizes) > 0 else None
+            n_event_indicators = ode_sizes[1] if len(ode_sizes) > 1 else None
+        except Exception:
+            pass
+
         opts = model.simulate_options()
         opts["ncp"] = ncp
         logger.info("Starting simulation: start=%s, end=%s, ncp=%s", start_time, end_time, ncp)
 
+        wall_start = time_mod.monotonic()
         try:
             sim_result = model.simulate(
                 start_time=start_time,
@@ -488,6 +515,8 @@ def _run_fmu_test_sync(
         finally:
             os.chdir(original_cwd)
 
+        wall_elapsed = time_mod.monotonic() - wall_start
+
         time_data = [float(t) for t in sim_result["time"]]
         outputs_data: dict[str, list[float]] = {}
         for var in output_names:
@@ -496,7 +525,44 @@ def _run_fmu_test_sync(
             except Exception:
                 logger.warning("Could not extract output variable: %s", var)
 
-        return {"time": time_data, "outputs": outputs_data}
+        # Extract solver statistics
+        solver_name = None
+        n_steps = None
+        n_fn_evals = None
+        n_jac_evals = None
+        try:
+            solver = sim_result.solver
+            solver_name = type(solver).__name__ if solver else None
+            if solver:
+                stats = solver.get_statistics()
+                # stats tuple: (steps, fn_evals, jac_evals, error_test_fails, ...)
+                if len(stats) > 0:
+                    n_steps = int(stats[0])
+                if len(stats) > 1:
+                    n_fn_evals = int(stats[1])
+                if len(stats) > 2:
+                    n_jac_evals = int(stats[2])
+        except Exception:
+            pass
+
+        n_output_variables = len(outputs_data)
+        n_time_steps = len(time_data)
+
+        stats = {
+            "elapsed_seconds": round(wall_elapsed, 3),
+            "n_time_steps": n_time_steps,
+            "n_output_variables": n_output_variables,
+            "n_data_points": n_time_steps * n_output_variables,
+            "simulation_time_span": end_time - start_time,
+            "n_state_variables": n_state_variables,
+            "n_event_indicators": n_event_indicators,
+            "solver_name": solver_name,
+            "n_steps": n_steps,
+            "n_function_evaluations": n_fn_evals,
+            "n_jacobian_evaluations": n_jac_evals,
+        }
+
+        return {"time": time_data, "outputs": outputs_data, "stats": stats}
 
 
 @router.post("/{type_name}/test-run", response_model=FMUTestRunResult)

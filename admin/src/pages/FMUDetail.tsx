@@ -463,19 +463,111 @@ export default function FMUDetail() {
               </div>
             )}
 
-            {/* Results chart */}
+            {/* Results info pane + chart */}
             {runResult && !runLoading && (
-              <div className="mt-6">
-                <p className="text-xs font-semibold text-brown uppercase tracking-wider mb-3">
-                  Results — {outputCount} output variable{outputCount !== 1 ? 's' : ''}
-                </p>
-                {outputCount === 0 ? (
-                  <p className="text-brown text-sm">No output variables returned.</p>
-                ) : (
-                  <div className="bg-off-white rounded-xl p-3 overflow-hidden">
-                    <TestRunChart result={runResult} />
+              <div className="mt-6 space-y-4">
+                {/* Stats info pane */}
+                <div>
+                  <p className="text-xs font-semibold text-brown uppercase tracking-wider mb-3">
+                    Test Results
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                    <div className="bg-off-white rounded-lg px-3 py-2.5">
+                      <p className="text-xs text-brown mb-0.5">Wall Clock Time</p>
+                      <p className="text-sm text-off-black font-medium">
+                        {runResult.stats.elapsed_seconds < 1
+                          ? `${Math.round(runResult.stats.elapsed_seconds * 1000)} ms`
+                          : `${runResult.stats.elapsed_seconds.toFixed(2)} s`}
+                      </p>
+                    </div>
+                    <div className="bg-off-white rounded-lg px-3 py-2.5">
+                      <p className="text-xs text-brown mb-0.5">Time Steps</p>
+                      <p className="text-sm text-off-black font-medium">
+                        {runResult.stats.n_time_steps.toLocaleString()}
+                      </p>
+                    </div>
+                    <div className="bg-off-white rounded-lg px-3 py-2.5">
+                      <p className="text-xs text-brown mb-0.5">Output Variables</p>
+                      <p className="text-sm text-off-black font-medium">
+                        {runResult.stats.n_output_variables}
+                      </p>
+                    </div>
+                    <div className="bg-off-white rounded-lg px-3 py-2.5">
+                      <p className="text-xs text-brown mb-0.5">Data Points</p>
+                      <p className="text-sm text-off-black font-medium">
+                        {runResult.stats.n_data_points.toLocaleString()}
+                      </p>
+                    </div>
+                    <div className="bg-off-white rounded-lg px-3 py-2.5">
+                      <p className="text-xs text-brown mb-0.5">Sim. Time Span</p>
+                      <p className="text-sm text-off-black font-medium">
+                        {runResult.stats.simulation_time_span} s
+                      </p>
+                    </div>
+                    {runResult.stats.n_state_variables != null && (
+                      <div className="bg-off-white rounded-lg px-3 py-2.5">
+                        <p className="text-xs text-brown mb-0.5">State Variables</p>
+                        <p className="text-sm text-off-black font-medium">
+                          {runResult.stats.n_state_variables}
+                        </p>
+                      </div>
+                    )}
+                    {runResult.stats.n_event_indicators != null && (
+                      <div className="bg-off-white rounded-lg px-3 py-2.5">
+                        <p className="text-xs text-brown mb-0.5">Event Indicators</p>
+                        <p className="text-sm text-off-black font-medium">
+                          {runResult.stats.n_event_indicators}
+                        </p>
+                      </div>
+                    )}
+                    {runResult.stats.solver_name && (
+                      <div className="bg-off-white rounded-lg px-3 py-2.5">
+                        <p className="text-xs text-brown mb-0.5">Solver</p>
+                        <p className="text-sm text-off-black font-medium">
+                          {runResult.stats.solver_name}
+                        </p>
+                      </div>
+                    )}
+                    {runResult.stats.n_steps != null && (
+                      <div className="bg-off-white rounded-lg px-3 py-2.5">
+                        <p className="text-xs text-brown mb-0.5">Solver Steps</p>
+                        <p className="text-sm text-off-black font-medium">
+                          {runResult.stats.n_steps.toLocaleString()}
+                        </p>
+                      </div>
+                    )}
+                    {runResult.stats.n_function_evaluations != null && (
+                      <div className="bg-off-white rounded-lg px-3 py-2.5">
+                        <p className="text-xs text-brown mb-0.5">Function Evals</p>
+                        <p className="text-sm text-off-black font-medium">
+                          {runResult.stats.n_function_evaluations.toLocaleString()}
+                        </p>
+                      </div>
+                    )}
+                    {runResult.stats.n_jacobian_evaluations != null && (
+                      <div className="bg-off-white rounded-lg px-3 py-2.5">
+                        <p className="text-xs text-brown mb-0.5">Jacobian Evals</p>
+                        <p className="text-sm text-off-black font-medium">
+                          {runResult.stats.n_jacobian_evaluations.toLocaleString()}
+                        </p>
+                      </div>
+                    )}
                   </div>
-                )}
+                </div>
+
+                {/* Results chart */}
+                <div>
+                  <p className="text-xs font-semibold text-brown uppercase tracking-wider mb-3">
+                    Output — {outputCount} variable{outputCount !== 1 ? 's' : ''}
+                  </p>
+                  {outputCount === 0 ? (
+                    <p className="text-brown text-sm">No output variables returned.</p>
+                  ) : (
+                    <div className="bg-off-white rounded-xl p-3 overflow-hidden">
+                      <TestRunChart result={runResult} />
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </section>

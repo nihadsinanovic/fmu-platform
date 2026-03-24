@@ -73,9 +73,24 @@ export interface FMUTestRunRequest {
   ncp: number
 }
 
+export interface FMUTestRunStats {
+  elapsed_seconds: number
+  n_time_steps: number
+  n_output_variables: number
+  n_data_points: number
+  simulation_time_span: number
+  n_state_variables: number | null
+  n_event_indicators: number | null
+  solver_name: string | null
+  n_steps: number | null
+  n_function_evaluations: number | null
+  n_jacobian_evaluations: number | null
+}
+
 export interface FMUTestRunResult {
   time: number[]
   outputs: Record<string, number[]>
+  stats: FMUTestRunStats
 }
 
 export interface DataFileValidation {
