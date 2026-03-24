@@ -525,23 +525,98 @@ def _run_fmu_test_sync(
             except Exception:
                 logger.warning("Could not extract output variable: %s", var)
 
-        # Extract solver statistics
+        # Extract solver statistics — try multiple access patterns
         solver_name = None
         n_steps = None
         n_fn_evals = None
         n_jac_evals = None
+
+        # Approach 1: sim_result.solver (some PyFMI versions expose it)
+        solver = None
         try:
             solver = sim_result.solver
-            solver_name = type(solver).__name__ if solver else None
-            if solver:
-                stats = solver.get_statistics()
-                # stats tuple: (steps, fn_evals, jac_evals, error_test_fails, ...)
-                if len(stats) > 0:
-                    n_steps = int(stats[0])
-                if len(stats) > 1:
-                    n_fn_evals = int(stats[1])
-                if len(stats) > 2:
-                    n_jac_evals = int(stats[2])
+        except Exception:
+            pass
+
+        # Approach 2: model's internal solver reference
+        if solver is None:
+            for attr in ("_solver", "solver", "_sim"):
+                try:
+                    solver = getattr(model, attr, None)
+                    if solver is not None:
+                        break
+                except Exception:
+                    pass
+
+        # Approach 3: sim_result might have stats attributes directly
+        if solver is None:
+            try:
+                # Some PyFMI versions store stats on the result
+                if hasattr(sim_result, "get_solver_statistics"):
+                    raw = sim_result.get_solver_statistics()
+                    if raw and len(raw) >= 3:
+                        n_steps = int(raw[0])
+                        n_fn_evals = int(raw[1])
+                        n_jac_evals = int(raw[2])
+            except Exception:
+                pass
+
+        if solver is not None:
+            try:
+                solver_name = type(solver).__name__
+            except Exception:
+                pass
+            try:
+                stats_data = solver.get_statistics()
+                if stats_data and len(stats_data) > 0:
+                    n_steps = int(stats_data[0])
+                if stats_data and len(stats_data) > 1:
+                    n_fn_evals = int(stats_data[1])
+                if stats_data and len(stats_data) > 2:
+                    n_jac_evals = int(stats_data[2])
+            except Exception as stats_err:
+                logger.warning("Could not get solver.get_statistics(): %s", stats_err)
+
+        # Approach 4: parse FMU log for CVode solver summary
+        if n_steps is None:
+            try:
+                import re
+                fmu_log_lines = model.get_log()
+                fmu_log_text = "\n".join(fmu_log_lines) if isinstance(fmu_log_lines, list) else str(fmu_log_lines)
+                # CVode logs patterns like "Number of steps: 12345"
+                for pattern, target in [
+                    (r"(?:Number of steps|nst)\s*[:=]\s*(\d+)", "steps"),
+                    (r"(?:Function evaluations|nfe)\s*[:=]\s*(\d+)", "fn_evals"),
+                    (r"(?:Jacobian evaluations|nje)\s*[:=]\s*(\d+)", "jac_evals"),
+                ]:
+                    m = re.search(pattern, fmu_log_text, re.IGNORECASE)
+                    if m:
+                        val = int(m.group(1))
+                        if target == "steps":
+                            n_steps = val
+                        elif target == "fn_evals":
+                            n_fn_evals = val
+                        elif target == "jac_evals":
+                            n_jac_evals = val
+            except Exception:
+                pass
+
+        # Fallback: identify solver from options
+        if solver_name is None:
+            try:
+                solver_name = opts.get("solver", "CVode")
+            except Exception:
+                pass
+
+        # Log what we found for debugging
+        logger.info(
+            "Solver stats: solver=%s, steps=%s, fn_evals=%s, jac_evals=%s",
+            solver_name, n_steps, n_fn_evals, n_jac_evals,
+        )
+        # Log available attributes on sim_result for future debugging
+        try:
+            result_attrs = [a for a in dir(sim_result) if not a.startswith("__")]
+            logger.info("sim_result attributes: %s", result_attrs)
         except Exception:
             pass
 
