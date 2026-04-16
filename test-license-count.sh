@@ -10,9 +10,15 @@
 # the license server the way a multi-process co-simulation would.
 #
 # Usage:
-#   ./test-license-count.sh               # default: N=4, FMU=stackable_apartment
-#   ./test-license-count.sh 8             # try 8 concurrent
-#   ./test-license-count.sh 8 my_fmu_name # custom FMU type name
+#   ./test-license-count.sh                  # default: N=4, FMU=stackable_apartment, hold=5s
+#   ./test-license-count.sh 8                # try 8 concurrent
+#   ./test-license-count.sh 8 my_fmu_name    # custom FMU type name
+#   ./test-license-count.sh 8 my_fmu_name 10 # hold each license for 10s
+#
+# Each probe explicitly holds its license for HOLD_SECONDS (default 5s) after
+# FMU instantiation. This way, if licenses are truly being checked out in
+# parallel, total wall time stays ~= HOLD_SECONDS + startup overhead regardless
+# of N. If the license server is serializing, total wall time grows with N.
 #
 set -euo pipefail
 
@@ -21,6 +27,7 @@ cd "$REPO_DIR"
 
 N="${1:-4}"
 FMU_TYPE="${2:-stackable_apartment}"
+HOLD_SECONDS="${3:-5}"
 
 echo ""
 echo "FMU Platform — License Probe"
@@ -28,6 +35,7 @@ echo "============================"
 echo ""
 echo "  Concurrent loads : $N"
 echo "  FMU type         : $FMU_TYPE"
+echo "  License hold     : ${HOLD_SECONDS}s per probe"
 echo ""
 
 if ! docker compose ps --status running --services 2>/dev/null | grep -q '^api$'; then
@@ -39,7 +47,7 @@ fi
 # loads the FMU, runs 1s of simulation (long enough to force license checkout),
 # and prints exactly one of: SUCCESS, LICENSE_FAILURE, OTHER_ERROR:<msg>.
 PROBE=$(cat <<'PYEOF'
-import os, sys, tempfile, shutil, logging
+import os, sys, time, tempfile, shutil, logging
 from pathlib import Path
 
 logging.disable(logging.CRITICAL)
@@ -50,6 +58,7 @@ try:
     from engine.fmu_utils import setup_amesim_environment, prepare_fmu_for_simulation
 
     fmu_type = sys.argv[1]
+    hold_seconds = float(sys.argv[2])
     setup_amesim_environment(settings.TEMP_PATH, settings.AMESIM_LICENSE_SERVER)
 
     engine = create_engine(settings.DATABASE_URL_SYNC)
@@ -96,6 +105,12 @@ try:
                 print("LICENSE_FAILURE")
                 sys.exit(0)
             raise
+        # License is checked out here. Hold it for the requested window.
+        held_start = time.time()
+        print(f"HELD_START {held_start:.3f}", flush=True)
+        time.sleep(hold_seconds)
+        held_end = time.time()
+        print(f"HELD_END {held_end:.3f}", flush=True)
         print("SUCCESS")
 except Exception as exc:
     msg = str(exc).replace("\n", " ")[:200]
@@ -109,40 +124,80 @@ echo ""
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
+WALL_START=$(date +%s.%N)
+
 for i in $(seq 1 "$N"); do
   (
-    output=$(docker compose exec -T api python -c "$PROBE" "$FMU_TYPE" 2>&1 || true)
-    # Keep only the last non-empty line (the result tag), in case anything
-    # leaked to stdout despite our logging.disable.
+    output=$(docker compose exec -T api python -c "$PROBE" "$FMU_TYPE" "$HOLD_SECONDS" 2>&1 || true)
+    # Save full output for analysis; pull out the result tag for display.
+    echo "$output" > "$TMPDIR/probe-$i.out"
     result=$(echo "$output" | grep -E '^(SUCCESS|LICENSE_FAILURE|OTHER_ERROR)' | tail -n 1)
     [ -z "$result" ] && result="OTHER_ERROR: no-result-tag (output: $(echo "$output" | tail -c 200))"
-    echo "$result" > "$TMPDIR/probe-$i.out"
     printf "    probe %2d: %s\n" "$i" "$result"
   ) &
 done
 
 wait
 
+WALL_END=$(date +%s.%N)
+WALL_ELAPSED=$(awk -v s="$WALL_START" -v e="$WALL_END" 'BEGIN { printf "%.2f", e - s }')
+
 echo ""
 echo "  ─────────────────────────────────────────────"
 echo "  Summary"
 echo "  ─────────────────────────────────────────────"
 
-SUCCESS=$(grep -l '^SUCCESS$' "$TMPDIR"/probe-*.out 2>/dev/null | wc -l || true)
-LIC_FAIL=$(grep -l '^LICENSE_FAILURE$' "$TMPDIR"/probe-*.out 2>/dev/null | wc -l || true)
-OTHER=$(grep -l '^OTHER_ERROR' "$TMPDIR"/probe-*.out 2>/dev/null | wc -l || true)
+SUCCESS=$(grep -lE '^SUCCESS$' "$TMPDIR"/probe-*.out 2>/dev/null | wc -l || true)
+LIC_FAIL=$(grep -lE '^LICENSE_FAILURE$' "$TMPDIR"/probe-*.out 2>/dev/null | wc -l || true)
+OTHER=$(grep -lE '^OTHER_ERROR' "$TMPDIR"/probe-*.out 2>/dev/null | wc -l || true)
 
 printf "    successful checkouts : %d\n" "$SUCCESS"
 printf "    license failures     : %d\n" "$LIC_FAIL"
 printf "    other errors         : %d\n" "$OTHER"
+printf "    total wall time      : %ss\n" "$WALL_ELAPSED"
 echo ""
 
-if [ "$LIC_FAIL" -eq 0 ] && [ "$OTHER" -eq 0 ]; then
-  echo "  ✓ All $N succeeded. Try a higher N to find the ceiling."
-elif [ "$LIC_FAIL" -gt 0 ]; then
+# Concurrency analysis: look at HELD_START / HELD_END timestamps from each
+# probe. If two probes' hold windows overlap, at least two licenses were
+# simultaneously checked out. Count the maximum overlap across time.
+START_TIMES=$(grep -h '^HELD_START ' "$TMPDIR"/probe-*.out 2>/dev/null | awk '{print $2}')
+END_TIMES=$(grep -h '^HELD_END ' "$TMPDIR"/probe-*.out 2>/dev/null | awk '{print $2}')
+N_STARTS=$(echo "$START_TIMES" | grep -c . || true)
+
+if [ "$N_STARTS" -ge 2 ]; then
+  # Maximum overlap = at any instant, how many hold windows contain that instant?
+  # Sweep-line algorithm: sort events, +1 on start, -1 on end, track max.
+  MAX_OVERLAP=$(
+    {
+      echo "$START_TIMES" | awk '{ print $1, "+1" }'
+      echo "$END_TIMES"   | awk '{ print $1, "-1" }'
+    } | sort -k1,1n | awk '
+      { cur += $2; if (cur > max) max = cur }
+      END { print max }
+    '
+  )
+  # Also compute the narrowest overlap window (for intuition).
+  MAX_START=$(echo "$START_TIMES" | sort -n | tail -1)
+  MIN_END=$(echo "$END_TIMES" | sort -n | head -1)
+  ALL_OVERLAP=$(awk -v s="$MAX_START" -v e="$MIN_END" 'BEGIN { print (s < e) ? "yes" : "no" }')
+
+  printf "    peak concurrent hold : %d / %d\n" "$MAX_OVERLAP" "$SUCCESS"
+  printf "    all N simultaneously : %s\n" "$ALL_OVERLAP"
+  echo ""
+
+  if [ "$MAX_OVERLAP" -eq "$N" ] && [ "$LIC_FAIL" -eq 0 ]; then
+    echo "  ✓ All $N licenses were held simultaneously. True parallel checkout."
+    echo "    Try a higher N to find the ceiling."
+  elif [ "$MAX_OVERLAP" -lt "$N" ] && [ "$LIC_FAIL" -eq 0 ]; then
+    echo "  ⚠ Only $MAX_OVERLAP / $N held licenses simultaneously (despite all succeeding)."
+    echo "    The license server may be serializing — probes checked out, released,"
+    echo "    and the next one then checked out. Capacity likely = $MAX_OVERLAP."
+  fi
+fi
+
+if [ "$LIC_FAIL" -gt 0 ]; then
   echo "  ⚠ Hit a license ceiling at N=$N."
-  echo "    Effective parallel capacity is between $((N - LIC_FAIL)) and $N-1."
-  echo "    Re-run with lower N to confirm."
+  echo "    Effective parallel capacity is between $((N - LIC_FAIL)) and $((N - 1))."
 fi
 
 if [ "$OTHER" -gt 0 ]; then
