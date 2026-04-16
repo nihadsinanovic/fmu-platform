@@ -109,6 +109,12 @@ def worker_main(apt_id: str, fmu_type: str, conn) -> None:
     # Silence PyFMI's default progress output inside the worker.
     if "result_handling" in opts:
         opts["result_handling"] = "memory"
+    if "silent_mode" in opts:
+        opts["silent_mode"] = True
+    # Quiet Assimulo's CVode stats dump after every simulate() call. 50 == QUIET.
+    cvode_opts = opts.get("CVode_options")
+    if isinstance(cvode_opts, dict):
+        cvode_opts["verbosity"] = 50
 
     try:
         while True:

@@ -14,9 +14,14 @@ from __future__ import annotations
 import csv
 import sys
 import time
+from functools import partial
 from pathlib import Path
 
 from simulation.cosim_master import ApartmentSpec, CoSimMaster
+
+# Master prints get block-buffered behind workers' noisy CVode output when
+# stdout isn't a TTY (docker compose exec -T). Force a flush every time.
+print_flushed = partial(print, flush=True)
 
 
 def main(
@@ -48,7 +53,7 @@ def main(
 
     n_steps = int(sim_duration_s / macro_step_s)
 
-    print(
+    print_flushed(
         f"Cosim POC: {len(specs)} apartments, {n_steps} macro-steps of "
         f"{macro_step_s:.0f}s ({sim_duration_s:.0f}s total)"
     )
@@ -56,7 +61,7 @@ def main(
 
     with CoSimMaster(specs, macro_step_s=macro_step_s) as master:
         init_elapsed = time.monotonic() - wall_start
-        print(f"  workers ready in {init_elapsed:.1f}s; starting macro-step loop")
+        print_flushed(f"  workers ready in {init_elapsed:.1f}s; starting macro-step loop")
 
         rows: list[tuple[float, float, float]] = []
         # t = 0 row: before any stepping, use the initial guesses.
@@ -76,7 +81,7 @@ def main(
             rows.append((t, room_temps["apt_A"], room_temps["apt_B"]))
             if step_idx % 10 == 0 or step_idx == n_steps - 1:
                 elapsed = time.monotonic() - step_start
-                print(
+                print_flushed(
                     f"  step {step_idx + 1:4d}/{n_steps}  t={t:7.0f}s  "
                     f"apt_A={room_temps['apt_A']:6.2f}°C  "
                     f"apt_B={room_temps['apt_B']:6.2f}°C  "
@@ -102,12 +107,12 @@ def main(
         and all(-50.0 < r[1] < 60.0 and -50.0 < r[2] < 60.0 for r in rows)
     )
 
-    print()
-    print(f"  total wall time  : {total_elapsed:.1f}s")
-    print(f"  final apt_A temp : {final_a:.2f}°C")
-    print(f"  final apt_B temp : {final_b:.2f}°C")
-    print(f"  CSV              : {output_csv} ({len(rows)} rows)")
-    print(f"  sanity check     : {'PASS' if ok else 'FAIL'}")
+    print_flushed()
+    print_flushed(f"  total wall time  : {total_elapsed:.1f}s")
+    print_flushed(f"  final apt_A temp : {final_a:.2f}°C")
+    print_flushed(f"  final apt_B temp : {final_b:.2f}°C")
+    print_flushed(f"  CSV              : {output_csv} ({len(rows)} rows)")
+    print_flushed(f"  sanity check     : {'PASS' if ok else 'FAIL'}")
 
     return 0 if ok else 1
 
