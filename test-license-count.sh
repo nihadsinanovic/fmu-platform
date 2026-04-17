@@ -304,6 +304,18 @@ def main():
         pf("  re-export from Martti is needed; editing the XML alone is not safe.")
         return 1
     finally:
+        # Release every loaded FMU instance so its license returns to the
+        # pool. If we crash out mid-init via Ctrl+C, Python may get here
+        # before the OS kills us — doing this best-effort helps a lot.
+        for m in list(locals().get("models", []) or []):
+            try:
+                m.terminate()
+            except Exception:
+                pass
+            try:
+                m.free_instance()
+            except Exception:
+                pass
         # Get out of any directory we might be about to delete so the shell
         # we return to isn't left pointing at a vanished cwd.
         try:
