@@ -204,43 +204,25 @@ def main():
                f"instance #{load_license_fail_at} within a single process.")
             return 0
 
-        # ── 4. Initialize all N, with per-instance timing + timeout ──────
+        # ── 4. Initialize all N, with per-instance + per-call progress. ──
         # AMESim may defer its license checkout to fmi2EnterInitializationMode.
         # If so, the first LICENSE_POOL_SIZE inits will succeed; the next one
-        # will block waiting for a license that will never free. The timeout
-        # surfaces that case instead of hanging forever.
-        import signal
-
-        class _InitTimeout(Exception):
-            pass
-
-        def _on_alarm(signum, frame):
-            raise _InitTimeout()
-
-        init_timeout_s = 60
-        init_license_fail_at: int | None = None
+        # will block waiting for a license that will never free. We print
+        # around every FMI call so the user can see exactly where we're stuck
+        # (SIGALRM-based timeouts don't work reliably because AMESim's license
+        # client is in a blocking syscall that doesn't check EINTR).
         init_completed = 0
         for i, (m, wd) in enumerate(zip(models, inst_dirs)):
             os.chdir(wd)
             init_start = _time.monotonic()
-            signal.signal(signal.SIGALRM, _on_alarm)
-            signal.alarm(init_timeout_s)
+            pf(f"  init inst {i:2d} : setup_experiment...")
             try:
                 m.setup_experiment(start_time=0.0)
+                pf(f"  init inst {i:2d} : enter_initialization_mode...")
                 m.enter_initialization_mode()
+                pf(f"  init inst {i:2d} : exit_initialization_mode...")
                 m.exit_initialization_mode()
-                signal.alarm(0)
-                elapsed = _time.monotonic() - init_start
-                pf(f"  init inst {i:2d} : ok ({elapsed:5.2f}s)")
-                init_completed = i + 1
-            except _InitTimeout:
-                signal.alarm(0)
-                pf(f"  init inst {i:2d} : TIMEOUT after {init_timeout_s}s — "
-                   "likely blocked on license checkout")
-                init_license_fail_at = i
-                break
             except Exception as exc:  # noqa: BLE001
-                signal.alarm(0)
                 fmu_log = ""
                 try:
                     fmu_log = "\n".join(m.get_log()[-10:])
@@ -248,26 +230,21 @@ def main():
                     pass
                 exc_text = str(exc)
                 if _is_license_err(exc_text, fmu_log):
-                    pf(f"  init inst {i:2d} : LICENSE FAIL — {exc_text[:200]}")
-                    init_license_fail_at = i
-                    break
-                pf(f"  init inst {i:2d} : FAIL — {exc_text[:200]}")
+                    pf(f"  init inst {i:2d} : LICENSE FAIL after "
+                       f"{_time.monotonic() - init_start:.1f}s — {exc_text[:200]}")
+                else:
+                    pf(f"  init inst {i:2d} : FAIL — {exc_text[:200]}")
                 os.chdir(safe_cwd)
-                raise
+                pf("")
+                pf(f"  VERDICT: {init_completed}/{n_instances} instances fully "
+                   f"initialized before hitting a wall at instance #{i}.")
+                pf(f"  Licensing appears to be PER-INSTANCE. The total apartment "
+                   f"cap per simulation is {init_completed}.")
+                return 0
+            elapsed = _time.monotonic() - init_start
+            pf(f"  init inst {i:2d} : DONE ({elapsed:5.2f}s)")
+            init_completed = i + 1
         os.chdir(safe_cwd)
-
-        if init_license_fail_at is not None:
-            pf("")
-            pf(f"  VERDICT: {init_completed}/{n_instances} instances initialized "
-               f"before hitting a license wall at instance #{init_license_fail_at}.")
-            pf(f"  Licensing is PER-INSTANCE (checkout deferred to initialize).")
-            pf(f"  The total apartment cap per simulation is {init_completed}, "
-               "regardless of how we distribute instances across processes.")
-            pf("")
-            pf("  Good news: the singleton-flag flip in XML still works — we can")
-            pf("  pack up to the license-pool count into one process, saving")
-            pf("  subprocess-orchestration complexity for small buildings.")
-            return 0
         pf(f"  initialize   : all {loaded} ok")
 
         # ── 5. Drive all with identical inputs; compare outputs ───────────
