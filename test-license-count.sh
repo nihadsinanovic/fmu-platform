@@ -82,6 +82,42 @@ def _is_license_err(exc_text: str, fmu_log: str) -> bool:
     return any(s in exc_text for s in bad) or any(s in fmu_log for s in bad)
 
 
+# Globals used by the watchdog so it can release licenses even if the
+# main thread is stuck in a C blocking call.
+_watchdog_models: list = []
+
+
+def _start_watchdog(timeout_s: int) -> None:
+    """Force-exit after ``timeout_s`` to avoid leaving licenses leaked
+    indefinitely when AMESim blocks non-interruptibly.
+
+    The watchdog is a background daemon thread; if main() finishes
+    normally the process exits first and the watchdog dies with it.
+    """
+    import os as _os
+    import threading
+
+    def _kill():
+        pf(f"\nWATCHDOG: exceeded {timeout_s}s budget. Attempting cleanup...")
+        # Best effort — if these calls hang too, the _os._exit below still
+        # kills us, but then the license server sees leaked checkouts.
+        for m in list(_watchdog_models):
+            try:
+                m.terminate()
+            except Exception:
+                pass
+            try:
+                m.free_instance()
+            except Exception:
+                pass
+        pf("WATCHDOG: force-exit.")
+        _os._exit(3)
+
+    t = threading.Timer(timeout_s, _kill)
+    t.daemon = True
+    t.start()
+
+
 def main():
     from sqlalchemy import create_engine, text
 
@@ -94,6 +130,14 @@ def main():
 
     fmu_type = sys.argv[1]
     n_instances = int(sys.argv[2])
+
+    # Hard budget: ~10s per instance for load, ~30s per instance for init,
+    # ~10s per instance for simulate + 60s slack. This should cover normal
+    # runs at N<=pool-size generously but not leave the user waiting forever.
+    total_budget_s = max(120, 50 * n_instances + 60)
+    _start_watchdog(total_budget_s)
+    pf(f"  budget       : {total_budget_s}s wall-clock before force-exit")
+
     setup_amesim_environment(settings.TEMP_PATH, settings.AMESIM_LICENSE_SERVER)
 
     eng = create_engine(settings.sync_database_url)
@@ -170,6 +214,10 @@ def main():
         import time as _time
 
         models = []
+        # Link models into the global the watchdog can see so it can release
+        # them on timeout even if main-thread Python is blocked in C.
+        global _watchdog_models
+        _watchdog_models = models
         load_license_fail_at: int | None = None
         for i, (ready, wd) in enumerate(zip(ready_paths, inst_dirs)):
             os.chdir(wd)
