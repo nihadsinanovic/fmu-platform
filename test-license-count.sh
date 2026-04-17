@@ -21,8 +21,9 @@
 #   ./test-license-count.sh 8                     # 8 concurrent probes
 #   ./test-license-count.sh 8 my_fmu_name         # custom FMU type name
 #   ./test-license-count.sh 8 my_fmu_name 10      # hold each license for 10s
-#   ./test-license-count.sh multi-instance        # multi-instance safety test, default FMU
+#   ./test-license-count.sh multi-instance        # load 2 instances in 1 process (default)
 #   ./test-license-count.sh multi-instance my_fmu # same, custom FMU type
+#   ./test-license-count.sh multi-instance my_fmu 10 # load 10 instances to probe per-process vs per-instance licensing
 #
 set -euo pipefail
 
@@ -47,23 +48,24 @@ fi
 
 if [ "$MODE" = "multi-instance" ]; then
   FMU_TYPE="${1:-stackable_apartment}"
+  INSTANCE_COUNT="${2:-2}"
 
   echo ""
   echo "FMU Platform — Multi-Instance Safety Test"
   echo "========================================="
   echo ""
-  echo "  FMU type : $FMU_TYPE"
+  echo "  FMU type       : $FMU_TYPE"
+  echo "  Instance count : $INSTANCE_COUNT"
   echo ""
   echo "  Flipping canBeInstantiatedOnlyOncePerProcess to false in a copy of"
-  echo "  the FMU and attempting to load two instances in one Python process."
-  echo "  If both produce identical outputs for identical inputs, the flag"
-  echo "  was conservative and we can skip that part of the re-export."
+  echo "  the FMU and attempting to load N instances in one Python process."
+  echo "  With N=2 this tests basic singleton-safety; with N=10+ it also probes"
+  echo "  whether licensing is counted per-process or per-FMU-instance."
   echo ""
 
   PROBE=$(cat <<'PYEOF'
 import logging
 import os
-import re
 import shutil
 import sys
 import tempfile
@@ -73,6 +75,11 @@ from pathlib import Path
 
 logging.disable(logging.CRITICAL)
 pf = partial(print, flush=True)
+
+
+def _is_license_err(exc_text: str, fmu_log: str) -> bool:
+    bad = ("lic_init failed", "Checkout failed", "license", "License")
+    return any(s in exc_text for s in bad) or any(s in fmu_log for s in bad)
 
 
 def main():
@@ -86,6 +93,7 @@ def main():
     )
 
     fmu_type = sys.argv[1]
+    n_instances = int(sys.argv[2])
     setup_amesim_environment(settings.TEMP_PATH, settings.AMESIM_LICENSE_SERVER)
 
     eng = create_engine(settings.sync_database_url)
@@ -103,7 +111,9 @@ def main():
         sys.exit(2)
     pf(f"  original FMU : {original_fmu}")
 
+    safe_cwd = Path("/")  # somewhere that won't vanish when we rmtree(work)
     work = Path(tempfile.mkdtemp(prefix="multi_inst_"))
+
     try:
         # ── 1. Patch modelDescription.xml ─────────────────────────────────
         patched = work / "patched.fmu"
@@ -113,16 +123,12 @@ def main():
             md_raw = zin.read("modelDescription.xml").decode("utf-8")
         if 'canBeInstantiatedOnlyOncePerProcess="true"' not in md_raw:
             pf("FAIL: 'canBeInstantiatedOnlyOncePerProcess=\"true\"' not found in XML.")
-            pf("  The FMU may already be multi-instance, or uses a different syntax.")
             sys.exit(2)
         md_new = md_raw.replace(
             'canBeInstantiatedOnlyOncePerProcess="true"',
             'canBeInstantiatedOnlyOncePerProcess="false"',
             1,
         )
-
-        # Rewrite the zip: only modelDescription.xml changes; everything else
-        # is copied byte-for-byte from the original.
         patched_tmp = work / "patched_tmp.fmu"
         with (
             zipfile.ZipFile(patched, "r") as zin,
@@ -136,67 +142,78 @@ def main():
         shutil.move(patched_tmp, patched)
         pf("  XML patch    : canBeInstantiatedOnlyOncePerProcess → false")
 
-        # ── 2. Make two copies with distinct names so prepare_fmu_for_simulation
-        #      doesn't overwrite its own output on the second call.
-        fmu_a = work / "inst_a.fmu"
-        fmu_b = work / "inst_b.fmu"
-        shutil.copy2(patched, fmu_a)
-        shutil.copy2(patched, fmu_b)
+        # ── 2. Prepare N distinct ready-to-load FMUs, each in its own dir ─
+        inst_dirs: list[Path] = []
+        ready_paths: list[Path] = []
+        for i in range(n_instances):
+            fmu_i = work / f"inst_{i:02d}.fmu"
+            shutil.copy2(patched, fmu_i)
+            dir_i = work / f"work_{i:02d}"
+            dir_i.mkdir()
+            ready_paths.append(prepare_fmu_for_simulation(fmu_i, dir_i))
+            inst_dirs.append(dir_i)
 
-        dir_a = work / "work_a"
-        dir_b = work / "work_b"
-        dir_a.mkdir()
-        dir_b.mkdir()
-        ready_a = prepare_fmu_for_simulation(fmu_a, dir_a)
-        ready_b = prepare_fmu_for_simulation(fmu_b, dir_b)
-
-        # Also drop data files directly in each work dir, matching what
-        # _run_fmu_test_sync does — belt and suspenders.
         data_dir = original_fmu.parent / "data"
         if data_dir.exists():
             for f in data_dir.iterdir():
                 if not f.is_file():
                     continue
-                for wd in (dir_a, dir_b):
+                for wd in inst_dirs:
                     dest = wd / f.name
                     if f.suffix == ".data":
                         _normalize_data_file_for_injection(f, dest)
                     else:
                         shutil.copy2(f, dest)
 
-        # ── 3. Load both in ONE process ───────────────────────────────────
+        # ── 3. Load all N in ONE process. Watch for license errors. ───────
         from pyfmi import load_fmu  # type: ignore[import]
 
-        os.chdir(dir_a)
-        pf("  load inst A  : attempting...")
-        model_a = load_fmu(str(ready_a), log_level=0)
-        pf("  load inst A  : ok")
+        models = []
+        load_license_fail_at: int | None = None
+        for i, (ready, wd) in enumerate(zip(ready_paths, inst_dirs)):
+            os.chdir(wd)
+            try:
+                m = load_fmu(str(ready), log_level=0)
+                models.append(m)
+                pf(f"  load inst {i:2d} : ok")
+            except Exception as exc:  # noqa: BLE001
+                fmu_log = ""
+                if models:
+                    try:
+                        fmu_log = "\n".join(models[-1].get_log()[-10:])
+                    except Exception:
+                        pass
+                exc_text = str(exc)
+                if _is_license_err(exc_text, fmu_log):
+                    pf(f"  load inst {i:2d} : LICENSE FAIL — {exc_text[:200]}")
+                    load_license_fail_at = i
+                    break
+                pf(f"  load inst {i:2d} : FAIL (non-license) — {exc_text[:200]}")
+                os.chdir(safe_cwd)
+                raise
 
-        os.chdir(dir_b)
-        pf("  load inst B  : attempting (critical test)...")
-        try:
-            model_b = load_fmu(str(ready_b), log_level=0)
-        except Exception as exc:  # noqa: BLE001
-            pf(f"  load inst B  : FAILED — {exc}")
+        os.chdir(safe_cwd)
+        loaded = len(models)
+        pf(f"  summary      : {loaded}/{n_instances} instances loaded into one process")
+
+        if load_license_fail_at is not None:
             pf("")
-            pf("  VERDICT: FMU cannot be loaded twice even with the flag flipped.")
-            pf("  Need a real re-export from Martti with the singleton flag off.")
-            sys.exit(1)
-        pf("  load inst B  : ok")
+            pf(f"  VERDICT: licensing is PER-INSTANCE. Hit a license cap at "
+               f"instance #{load_license_fail_at} within a single process.")
+            pf("  Total simultaneous FMU instances (across all processes) is "
+               "bounded by the license pool.")
+            return 0  # informative outcome, not a failure of the test itself
 
-        # ── 4. Initialize both ────────────────────────────────────────────
-        os.chdir(dir_a)
-        model_a.setup_experiment(start_time=0.0)
-        model_a.enter_initialization_mode()
-        model_a.exit_initialization_mode()
+        # ── 4. Initialize all N ──────────────────────────────────────────
+        for i, (m, wd) in enumerate(zip(models, inst_dirs)):
+            os.chdir(wd)
+            m.setup_experiment(start_time=0.0)
+            m.enter_initialization_mode()
+            m.exit_initialization_mode()
+        os.chdir(safe_cwd)
+        pf(f"  initialize   : all {loaded} ok")
 
-        os.chdir(dir_b)
-        model_b.setup_experiment(start_time=0.0)
-        model_b.enter_initialization_mode()
-        model_b.exit_initialization_mode()
-        pf("  initialize   : both ok")
-
-        # ── 5. Drive both with identical inputs ───────────────────────────
+        # ── 5. Drive all with identical inputs; compare outputs ───────────
         inputs = {
             "amesim_interface.floor_temp": 15.0,
             "amesim_interface.roof_temp": 10.0,
@@ -204,8 +221,6 @@ def main():
         }
         names = list(inputs.keys())
         values = list(inputs.values())
-        model_a.set(names, values)
-        model_b.set(names, values)
 
         def _quiet(model):
             opts = model.simulate_options()
@@ -220,34 +235,47 @@ def main():
                 cv["verbosity"] = 50
             return opts
 
-        pf("  simulate     : 60s with identical inputs, both instances...")
-        os.chdir(dir_a)
-        res_a = model_a.simulate(start_time=0.0, final_time=60.0, options=_quiet(model_a))
-        os.chdir(dir_b)
-        res_b = model_b.simulate(start_time=0.0, final_time=60.0, options=_quiet(model_b))
+        pf(f"  simulate     : 60s with identical inputs, all {loaded} instances...")
+        room_temps: list[float] = []
+        for i, (m, wd) in enumerate(zip(models, inst_dirs)):
+            m.set(names, values)
+            os.chdir(wd)
+            res = m.simulate(start_time=0.0, final_time=60.0, options=_quiet(m))
+            room_temps.append(float(res["amesim_interface.room_temp"][-1]))
+        os.chdir(safe_cwd)
 
-        room_a = float(res_a["amesim_interface.room_temp"][-1])
-        room_b = float(res_b["amesim_interface.room_temp"][-1])
-        diff = abs(room_a - room_b)
-        pf(f"  inst A result: room_temp @ t=60s = {room_a:.4f} °C")
-        pf(f"  inst B result: room_temp @ t=60s = {room_b:.4f} °C")
-        pf(f"  |A - B|      : {diff:.6f} °C")
+        for i, rt in enumerate(room_temps):
+            pf(f"  inst {i:2d} room  : {rt:.4f} °C")
+        spread = max(room_temps) - min(room_temps)
+        pf(f"  max spread   : {spread:.6f} °C")
 
-        pf("")
         tolerance = 0.001
-        if diff < tolerance:
-            pf("  VERDICT: PASS — two instances in one process produced identical")
-            pf(f"  results (difference {diff:.6f} °C < {tolerance} °C tolerance).")
-            pf("  The singleton-per-process flag appears to be a conservative")
-            pf("  declaration; flipping it in the XML is safe for this FMU.")
-            pf("  (State flags canGetAndSetFMUstate still require a re-export.)")
+        pf("")
+        if spread < tolerance:
+            pf(f"  VERDICT: PASS — all {loaded} instances in one process produced")
+            pf(f"  identical results (spread {spread:.6f} °C < {tolerance} °C).")
+            if loaded >= 10:
+                pf("  No license errors despite loading 10+ instances in a single")
+                pf("  Python process. This strongly suggests the license server is")
+                pf("  counting PER PROCESS, not per instance — a huge win. Combined")
+                pf("  with the XML singleton flip, we could run many apartments on")
+                pf("  one license without needing Martti's state-save re-export.")
+            else:
+                pf("  The singleton-per-process flag is conservative; flipping it in")
+                pf("  the XML is safe for this FMU. Try a larger N to test whether")
+                pf("  licensing is per-process or per-instance.")
             return 0
-        else:
-            pf(f"  VERDICT: FAIL — outputs differ by {diff:.4f} °C > {tolerance} °C.")
-            pf("  Instances appear to share state through static globals. A real")
-            pf("  re-export from Martti is needed; editing the XML alone is not safe.")
-            return 1
+        pf(f"  VERDICT: FAIL — outputs differ by {spread:.4f} °C > {tolerance} °C.")
+        pf("  Instances appear to share state through static globals. A real")
+        pf("  re-export from Martti is needed; editing the XML alone is not safe.")
+        return 1
     finally:
+        # Get out of any directory we might be about to delete so the shell
+        # we return to isn't left pointing at a vanished cwd.
+        try:
+            os.chdir(safe_cwd)
+        except Exception:
+            pass
         shutil.rmtree(work, ignore_errors=True)
 
 
@@ -262,19 +290,17 @@ PYEOF
 
   # Run the probe. If Python segfaults or exits non-zero, capture it.
   set +e
-  docker compose exec -T api python -c "$PROBE" "$FMU_TYPE"
+  docker compose exec -T api python -c "$PROBE" "$FMU_TYPE" "$INSTANCE_COUNT"
   rc=$?
   set -e
   echo ""
   if [ "$rc" -eq 0 ]; then
     echo "  ─────────────────────────────────────────────"
-    echo "  Test passed. The singleton flag can safely be flipped in the XML."
-    echo "  Still need Martti's re-export for canGetAndSetFMUstate."
+    echo "  Test passed — see verdict above for the licensing implication."
   elif [ "$rc" -eq 139 ] || [ "$rc" -eq 134 ]; then
     echo "  ─────────────────────────────────────────────"
     echo "  ✗ Python crashed (exit $rc — likely segfault/abort)."
-    echo "  The FMU is definitely NOT safe to run twice in one process."
-    echo "  Need Martti's re-export."
+    echo "  The FMU is definitely NOT safe to run this many in one process."
   else
     echo "  ─────────────────────────────────────────────"
     echo "  ✗ Test failed (exit $rc). See output above."
