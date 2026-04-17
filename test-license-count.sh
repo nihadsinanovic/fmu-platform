@@ -1,29 +1,291 @@
 #!/usr/bin/env bash
 #
-# FMU Platform — Empirical AMESim License Probe
+# FMU Platform — Empirical AMESim License Probe & Multi-Instance Safety Test
 #
-# Spawns N parallel Python processes inside the api container, each of which
-# loads the given FMU and runs a brief simulation. Reports how many succeed
-# vs. fail due to license checkout. Since each docker-exec call creates a
-# fresh Python process, this bypasses the FMU's
-# canBeInstantiatedOnlyOncePerProcess="true" constraint and actually exercises
-# the license server the way a multi-process co-simulation would.
+# Two modes:
+#
+# 1. License probe (default): spawns N parallel Python processes inside the
+#    api container, each loads the given FMU and holds its license for a
+#    fixed window. Reports peak concurrent hold to distinguish a true parallel
+#    license pool from a serializing server.
+#
+# 2. Multi-instance test (`./test-license-count.sh multi-instance`): creates
+#    an in-place copy of the FMU with ``canBeInstantiatedOnlyOncePerProcess``
+#    flipped from true to false in modelDescription.xml, then attempts to
+#    load two instances in ONE Python process. If both produce identical
+#    outputs for identical inputs, the FMU is multi-instance-safe and the
+#    singleton flag was only a conservative declaration.
 #
 # Usage:
-#   ./test-license-count.sh                  # default: N=4, FMU=stackable_apartment, hold=5s
-#   ./test-license-count.sh 8                # try 8 concurrent
-#   ./test-license-count.sh 8 my_fmu_name    # custom FMU type name
-#   ./test-license-count.sh 8 my_fmu_name 10 # hold each license for 10s
-#
-# Each probe explicitly holds its license for HOLD_SECONDS (default 5s) after
-# FMU instantiation. This way, if licenses are truly being checked out in
-# parallel, total wall time stays ~= HOLD_SECONDS + startup overhead regardless
-# of N. If the license server is serializing, total wall time grows with N.
+#   ./test-license-count.sh                       # N=4, FMU=stackable_apartment, hold=5s
+#   ./test-license-count.sh 8                     # 8 concurrent probes
+#   ./test-license-count.sh 8 my_fmu_name         # custom FMU type name
+#   ./test-license-count.sh 8 my_fmu_name 10      # hold each license for 10s
+#   ./test-license-count.sh multi-instance        # multi-instance safety test, default FMU
+#   ./test-license-count.sh multi-instance my_fmu # same, custom FMU type
 #
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$REPO_DIR"
+
+# Detect subcommand
+MODE="license-probe"
+if [ "${1:-}" = "multi-instance" ]; then
+  MODE="multi-instance"
+  shift
+fi
+
+if ! docker compose ps --status running --services 2>/dev/null | grep -q '^api$'; then
+  echo "  ✗ The 'api' container is not running."
+  exit 1
+fi
+
+# ════════════════════════════════════════════════════════════════════════════
+# Mode: multi-instance safety test
+# ════════════════════════════════════════════════════════════════════════════
+
+if [ "$MODE" = "multi-instance" ]; then
+  FMU_TYPE="${1:-stackable_apartment}"
+
+  echo ""
+  echo "FMU Platform — Multi-Instance Safety Test"
+  echo "========================================="
+  echo ""
+  echo "  FMU type : $FMU_TYPE"
+  echo ""
+  echo "  Flipping canBeInstantiatedOnlyOncePerProcess to false in a copy of"
+  echo "  the FMU and attempting to load two instances in one Python process."
+  echo "  If both produce identical outputs for identical inputs, the flag"
+  echo "  was conservative and we can skip that part of the re-export."
+  echo ""
+
+  PROBE=$(cat <<'PYEOF'
+import logging
+import os
+import re
+import shutil
+import sys
+import tempfile
+import zipfile
+from functools import partial
+from pathlib import Path
+
+logging.disable(logging.CRITICAL)
+pf = partial(print, flush=True)
+
+
+def main():
+    from sqlalchemy import create_engine, text
+
+    from app.config import settings
+    from engine.fmu_utils import (
+        _normalize_data_file_for_injection,
+        prepare_fmu_for_simulation,
+        setup_amesim_environment,
+    )
+
+    fmu_type = sys.argv[1]
+    setup_amesim_environment(settings.TEMP_PATH, settings.AMESIM_LICENSE_SERVER)
+
+    eng = create_engine(settings.sync_database_url)
+    with eng.connect() as conn:
+        row = conn.execute(
+            text("SELECT fmu_path FROM fmu_library WHERE type_name = :n"),
+            {"n": fmu_type},
+        ).fetchone()
+    if not row:
+        pf(f"FAIL: FMU type '{fmu_type}' not registered in fmu_library")
+        sys.exit(2)
+    original_fmu = Path(row[0])
+    if not original_fmu.exists():
+        pf(f"FAIL: FMU file {original_fmu} does not exist on disk")
+        sys.exit(2)
+    pf(f"  original FMU : {original_fmu}")
+
+    work = Path(tempfile.mkdtemp(prefix="multi_inst_"))
+    try:
+        # ── 1. Patch modelDescription.xml ─────────────────────────────────
+        patched = work / "patched.fmu"
+        shutil.copy2(original_fmu, patched)
+
+        with zipfile.ZipFile(patched, "r") as zin:
+            md_raw = zin.read("modelDescription.xml").decode("utf-8")
+        if 'canBeInstantiatedOnlyOncePerProcess="true"' not in md_raw:
+            pf("FAIL: 'canBeInstantiatedOnlyOncePerProcess=\"true\"' not found in XML.")
+            pf("  The FMU may already be multi-instance, or uses a different syntax.")
+            sys.exit(2)
+        md_new = md_raw.replace(
+            'canBeInstantiatedOnlyOncePerProcess="true"',
+            'canBeInstantiatedOnlyOncePerProcess="false"',
+            1,
+        )
+
+        # Rewrite the zip: only modelDescription.xml changes; everything else
+        # is copied byte-for-byte from the original.
+        patched_tmp = work / "patched_tmp.fmu"
+        with (
+            zipfile.ZipFile(patched, "r") as zin,
+            zipfile.ZipFile(patched_tmp, "w", zipfile.ZIP_DEFLATED) as zout,
+        ):
+            for info in zin.infolist():
+                if info.filename == "modelDescription.xml":
+                    zout.writestr(info, md_new.encode("utf-8"))
+                else:
+                    zout.writestr(info, zin.read(info.filename))
+        shutil.move(patched_tmp, patched)
+        pf("  XML patch    : canBeInstantiatedOnlyOncePerProcess → false")
+
+        # ── 2. Make two copies with distinct names so prepare_fmu_for_simulation
+        #      doesn't overwrite its own output on the second call.
+        fmu_a = work / "inst_a.fmu"
+        fmu_b = work / "inst_b.fmu"
+        shutil.copy2(patched, fmu_a)
+        shutil.copy2(patched, fmu_b)
+
+        dir_a = work / "work_a"
+        dir_b = work / "work_b"
+        dir_a.mkdir()
+        dir_b.mkdir()
+        ready_a = prepare_fmu_for_simulation(fmu_a, dir_a)
+        ready_b = prepare_fmu_for_simulation(fmu_b, dir_b)
+
+        # Also drop data files directly in each work dir, matching what
+        # _run_fmu_test_sync does — belt and suspenders.
+        data_dir = original_fmu.parent / "data"
+        if data_dir.exists():
+            for f in data_dir.iterdir():
+                if not f.is_file():
+                    continue
+                for wd in (dir_a, dir_b):
+                    dest = wd / f.name
+                    if f.suffix == ".data":
+                        _normalize_data_file_for_injection(f, dest)
+                    else:
+                        shutil.copy2(f, dest)
+
+        # ── 3. Load both in ONE process ───────────────────────────────────
+        from pyfmi import load_fmu  # type: ignore[import]
+
+        os.chdir(dir_a)
+        pf("  load inst A  : attempting...")
+        model_a = load_fmu(str(ready_a), log_level=0)
+        pf("  load inst A  : ok")
+
+        os.chdir(dir_b)
+        pf("  load inst B  : attempting (critical test)...")
+        try:
+            model_b = load_fmu(str(ready_b), log_level=0)
+        except Exception as exc:  # noqa: BLE001
+            pf(f"  load inst B  : FAILED — {exc}")
+            pf("")
+            pf("  VERDICT: FMU cannot be loaded twice even with the flag flipped.")
+            pf("  Need a real re-export from Martti with the singleton flag off.")
+            sys.exit(1)
+        pf("  load inst B  : ok")
+
+        # ── 4. Initialize both ────────────────────────────────────────────
+        os.chdir(dir_a)
+        model_a.setup_experiment(start_time=0.0)
+        model_a.enter_initialization_mode()
+        model_a.exit_initialization_mode()
+
+        os.chdir(dir_b)
+        model_b.setup_experiment(start_time=0.0)
+        model_b.enter_initialization_mode()
+        model_b.exit_initialization_mode()
+        pf("  initialize   : both ok")
+
+        # ── 5. Drive both with identical inputs ───────────────────────────
+        inputs = {
+            "amesim_interface.floor_temp": 15.0,
+            "amesim_interface.roof_temp": 10.0,
+            "amesim_interface.supply": 35.0,
+        }
+        names = list(inputs.keys())
+        values = list(inputs.values())
+        model_a.set(names, values)
+        model_b.set(names, values)
+
+        def _quiet(model):
+            opts = model.simulate_options()
+            opts["ncp"] = 1
+            opts["initialize"] = False
+            if "silent_mode" in opts:
+                opts["silent_mode"] = True
+            if "result_handling" in opts:
+                opts["result_handling"] = "memory"
+            cv = opts.get("CVode_options")
+            if isinstance(cv, dict):
+                cv["verbosity"] = 50
+            return opts
+
+        pf("  simulate     : 60s with identical inputs, both instances...")
+        os.chdir(dir_a)
+        res_a = model_a.simulate(start_time=0.0, final_time=60.0, options=_quiet(model_a))
+        os.chdir(dir_b)
+        res_b = model_b.simulate(start_time=0.0, final_time=60.0, options=_quiet(model_b))
+
+        room_a = float(res_a["amesim_interface.room_temp"][-1])
+        room_b = float(res_b["amesim_interface.room_temp"][-1])
+        diff = abs(room_a - room_b)
+        pf(f"  inst A result: room_temp @ t=60s = {room_a:.4f} °C")
+        pf(f"  inst B result: room_temp @ t=60s = {room_b:.4f} °C")
+        pf(f"  |A - B|      : {diff:.6f} °C")
+
+        pf("")
+        tolerance = 0.001
+        if diff < tolerance:
+            pf("  VERDICT: PASS — two instances in one process produced identical")
+            pf(f"  results (difference {diff:.6f} °C < {tolerance} °C tolerance).")
+            pf("  The singleton-per-process flag appears to be a conservative")
+            pf("  declaration; flipping it in the XML is safe for this FMU.")
+            pf("  (State flags canGetAndSetFMUstate still require a re-export.)")
+            return 0
+        else:
+            pf(f"  VERDICT: FAIL — outputs differ by {diff:.4f} °C > {tolerance} °C.")
+            pf("  Instances appear to share state through static globals. A real")
+            pf("  re-export from Martti is needed; editing the XML alone is not safe.")
+            return 1
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except Exception as exc:
+        pf(f"FAIL: unexpected exception: {exc}")
+        raise
+PYEOF
+)
+
+  # Run the probe. If Python segfaults or exits non-zero, capture it.
+  set +e
+  docker compose exec -T api python -c "$PROBE" "$FMU_TYPE"
+  rc=$?
+  set -e
+  echo ""
+  if [ "$rc" -eq 0 ]; then
+    echo "  ─────────────────────────────────────────────"
+    echo "  Test passed. The singleton flag can safely be flipped in the XML."
+    echo "  Still need Martti's re-export for canGetAndSetFMUstate."
+  elif [ "$rc" -eq 139 ] || [ "$rc" -eq 134 ]; then
+    echo "  ─────────────────────────────────────────────"
+    echo "  ✗ Python crashed (exit $rc — likely segfault/abort)."
+    echo "  The FMU is definitely NOT safe to run twice in one process."
+    echo "  Need Martti's re-export."
+  else
+    echo "  ─────────────────────────────────────────────"
+    echo "  ✗ Test failed (exit $rc). See output above."
+  fi
+  echo ""
+  exit "$rc"
+fi
+
+# ════════════════════════════════════════════════════════════════════════════
+# Mode: license probe (default)
+# ════════════════════════════════════════════════════════════════════════════
 
 N="${1:-4}"
 FMU_TYPE="${2:-stackable_apartment}"
@@ -37,11 +299,6 @@ echo "  Concurrent loads : $N"
 echo "  FMU type         : $FMU_TYPE"
 echo "  License hold     : ${HOLD_SECONDS}s per probe"
 echo ""
-
-if ! docker compose ps --status running --services 2>/dev/null | grep -q '^api$'; then
-  echo "  ✗ The 'api' container is not running."
-  exit 1
-fi
 
 # The probe itself runs inside the container. One small Python program that
 # loads the FMU, runs 1s of simulation (long enough to force license checkout),
